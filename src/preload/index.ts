@@ -14,6 +14,7 @@ const emulator: EmulatorBridge = {
     ipcRenderer.on('emulator:status-changed', handler);
     return () => ipcRenderer.removeListener('emulator:status-changed', handler);
   },
+  loadPricebook: (req: { dir: string; playerCode: string }) => ipcRenderer.invoke('pricebook:load', req),
 };
 
 if (process.contextIsolated) {

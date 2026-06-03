@@ -47,6 +47,9 @@ h3 { margin: 12px 0 6px; font-size: 13px; text-transform: uppercase; letter-spac
 .row button, .tender button, .lineactions button, .loghead button { background: #2d6cdf; color: #fff; border: 0; border-radius: 4px; padding: 6px 10px; cursor: pointer; }
 .row input.qty { flex: 0 0 64px; width: 64px; }
 .hint { font-size: 11px; color: #7e8696; margin: 4px 0 8px; line-height: 1.5; }
+.pbstatus { font-size: 11px; margin: 6px 0; }
+.pbstatus.ok { color: #3ec46d; }
+.pbstatus.err { color: #d9534f; }
 .hint code { background: #2a2e37; padding: 1px 4px; border-radius: 3px; color: #aeb6c6; }
 
 .basket { width: 100%; border-collapse: collapse; font-size: 14px; }

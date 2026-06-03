@@ -1,4 +1,5 @@
 /** Shared, browser-safe transport types used by main, preload and renderer. */
+import type { PricebookLoadResult } from './pricebook';
 
 export type Channel = 'vj' | 'pole';
 export type ConnState = 'connected' | 'connecting' | 'disconnected';
@@ -53,4 +54,6 @@ export interface EmulatorBridge {
   getStatus(): Promise<Status>;
   /** Subscribe to status changes; returns an unsubscribe function. */
   onStatus(cb: (status: Status) => void): () => void;
+  /** Load the pricebook matching the player code from a local directory. */
+  loadPricebook(req: { dir: string; playerCode: string }): Promise<PricebookLoadResult>;
 }

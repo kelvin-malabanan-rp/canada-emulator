@@ -1,9 +1,12 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'path';
+import { readdir, readFile } from 'fs/promises';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { PosTransport } from './PosTransport';
 import type { Channel, Status } from './PosTransport';
 import type { PosConfig } from '../core/posTypes';
+import { parsePricebook, resolvePricebookFilename } from '../core/pricebook';
+import type { PricebookLoadResult } from '../core/pricebook';
 
 let transport: PosTransport | null = null;
 
@@ -31,6 +34,40 @@ function registerEmulatorIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('emulator:status', () => {
     return transport?.status() ?? ({ vj: 'disconnected', pole: 'disconnected' } satisfies Status);
   });
+
+  // Load the OCT2000 pricebook that corresponds to the player code in use:
+  // Circle K names exports `<siteCode>-<timestamp>.xml`, so we pick the match.
+  ipcMain.handle(
+    'pricebook:load',
+    async (_evt, req: { dir: string; playerCode: string }): Promise<PricebookLoadResult> => {
+      const { dir, playerCode } = req;
+      try {
+        const files = await readdir(dir);
+        const filename = resolvePricebookFilename(files, playerCode);
+        if (!filename) {
+          return {
+            ok: false,
+            count: 0,
+            entries: [],
+            path: dir,
+            error: `No pricebook matching player code "${playerCode}" in ${dir}`,
+          };
+        }
+        const full = join(dir, filename);
+        const xml = await readFile(full, 'utf-8');
+        const entries = parsePricebook(xml);
+        return { ok: true, count: entries.length, entries, path: full };
+      } catch (err) {
+        return {
+          ok: false,
+          count: 0,
+          entries: [],
+          path: dir,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
 }
 
 let mainWindow: BrowserWindow | null = null;

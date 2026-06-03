@@ -25,6 +25,22 @@ export interface ResolvedItem {
   plu: string;
 }
 
+/** A sellable item surfaced as a quick key in the emulator UI. */
+export interface QuickKeyItem {
+  code: string;
+  description: string;
+  priceCents: number;
+}
+
+/** Result of a pricebook file load (returned from main → renderer over IPC). */
+export interface PricebookLoadResult {
+  ok: boolean;
+  count: number;
+  entries: PricebookEntry[];
+  path: string;
+  error?: string;
+}
+
 function firstTag(xml: string, tag: string): string | null {
   const m = new RegExp(`<${tag}>(.*?)</${tag}>`, 's').exec(xml);
   return m ? m[1].trim() : null;
@@ -79,4 +95,33 @@ export function buildPricebookIndex(entries: PricebookEntry[]): Map<string, Reso
 /** Convenience: parse + index in one step. */
 export function loadPricebookIndex(xml: string): Map<string, ResolvedItem> {
   return buildPricebookIndex(parsePricebook(xml));
+}
+
+/**
+ * Pick the pricebook file that corresponds to a player/site code. Circle K
+ * names pricebook exports `<siteCode>-<timestamp>.xml` (e.g.
+ * `31989-1706723713125.xml`), so the emulator loads the one matching the
+ * Player Code in use. Prefers the most recent (lexicographically last) match;
+ * falls back to an exact `<code>.xml`.
+ */
+export function resolvePricebookFilename(files: string[], playerCode: string): string | null {
+  const code = playerCode.trim();
+  if (!code) return null;
+  const matches = files.filter((f) => new RegExp(`^${code}-.*\\.xml$`, 'i').test(f)).sort();
+  if (matches.length > 0) return matches[matches.length - 1];
+  const exact = files.find((f) => f.toLowerCase() === `${code.toLowerCase()}.xml`);
+  return exact ?? null;
+}
+
+/** Select sellable items (barcode + description + price) to surface as quick keys. */
+export function pickQuickKeys(entries: PricebookEntry[], limit = 24): QuickKeyItem[] {
+  const keys: QuickKeyItem[] = [];
+  for (const e of entries) {
+    if (keys.length >= limit) break;
+    const code = e.barcodes[0];
+    if (code && e.description && e.priceCents > 0) {
+      keys.push({ code, description: e.description, priceCents: e.priceCents });
+    }
+  }
+  return keys;
 }

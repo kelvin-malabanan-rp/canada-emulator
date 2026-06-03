@@ -9,6 +9,13 @@ import {
   type Status,
 } from '../../core/posTypes';
 import type { PosLocale } from '../../core/currency';
+import {
+  buildPricebookIndex,
+  pickQuickKeys,
+  type PricebookEntry,
+  type QuickKeyItem,
+  type PricebookLoadResult,
+} from '../../core/pricebook';
 
 export interface LogEntry {
   id: number;
@@ -17,13 +24,9 @@ export interface LogEntry {
   at: string;
 }
 
-export interface PricebookItem {
-  code: string;
-  description: string;
-  priceCents: number;
-}
+export type PricebookItem = QuickKeyItem;
 
-/** A small CAD pricebook for the quick-key grid. */
+/** Fallback CAD quick keys used until a real pricebook is loaded. */
 export const PRICEBOOK: PricebookItem[] = [
   { code: '049000000443', description: 'Coke 20oz', priceCents: 229 },
   { code: '012000001291', description: 'Lays Chips', priceCents: 319 },
@@ -35,6 +38,9 @@ export const PRICEBOOK: PricebookItem[] = [
 
 const idleStatus: Status = { vj: 'disconnected', pole: 'disconnected' };
 const PLAYER_CFG_KEY = 'r6ca.playerConfig';
+const PRICEBOOK_DIR_KEY = 'r6ca.pricebookDir';
+const DEFAULT_PRICEBOOK_DIR =
+  '/Users/dev.kelvin/Documents/Rocket Partners/LIFT/liftck_player/module-app-liftck-player/data/pricebook';
 
 export function useEmulator(): {
   snapshot: SessionSnapshot;
@@ -48,6 +54,11 @@ export function useEmulator(): {
   log: LogEntry[];
   clearLog: () => void;
   setLocale: (l: PosLocale) => void;
+  quickKeys: PricebookItem[];
+  pricebookDir: string;
+  setPricebookDir: (dir: string) => void;
+  pricebookStatus: PricebookLoadResult | null;
+  loadPricebook: () => Promise<void>;
   addItem: (item: PricebookItem) => void;
   addCustom: (input: { code: string; description: string; priceCents: number; quantity: number }) => void;
   scan: (code: string) => void;
@@ -74,6 +85,27 @@ export function useEmulator(): {
   });
   const [log, setLog] = useState<LogEntry[]>([]);
   const logId = useRef(0);
+
+  const [pricebookDir, setPricebookDirState] = useState<string>(
+    () => localStorage.getItem(PRICEBOOK_DIR_KEY) ?? DEFAULT_PRICEBOOK_DIR,
+  );
+  const [pricebookEntries, setPricebookEntries] = useState<PricebookEntry[]>([]);
+  const [pricebookStatus, setPricebookStatus] = useState<PricebookLoadResult | null>(null);
+
+  const setPricebookDir = useCallback((dir: string) => {
+    setPricebookDirState(dir);
+    try {
+      localStorage.setItem(PRICEBOOK_DIR_KEY, dir);
+    } catch {
+      // ignore storage failures
+    }
+  }, []);
+
+  const pricebookIndex = useMemo(() => buildPricebookIndex(pricebookEntries), [pricebookEntries]);
+  const quickKeys = useMemo<PricebookItem[]>(
+    () => (pricebookEntries.length > 0 ? pickQuickKeys(pricebookEntries) : PRICEBOOK),
+    [pricebookEntries],
+  );
 
   const setPlayerConfig = useCallback((c: PlayerConfig) => {
     const normalized = normalizePlayerConfig(c);
@@ -127,6 +159,12 @@ export function useEmulator(): {
     [session],
   );
 
+  const loadPricebook = useCallback(async () => {
+    const result = await window.emulator.loadPricebook({ dir: pricebookDir, playerCode: playerConfig.playerCode });
+    setPricebookStatus(result);
+    setPricebookEntries(result.ok ? result.entries : []);
+  }, [pricebookDir, playerConfig.playerCode]);
+
   return useMemo(
     () => ({
       snapshot,
@@ -140,12 +178,23 @@ export function useEmulator(): {
       log,
       clearLog: () => setLog([]),
       setLocale,
+      quickKeys,
+      pricebookDir,
+      setPricebookDir,
+      pricebookStatus,
+      loadPricebook,
       addItem: (item: PricebookItem) => dispatch(session.addItem(item)),
       addCustom: (input: { code: string; description: string; priceCents: number; quantity: number }) =>
         dispatch(session.addItem(input)),
       scan: (code: string) => {
-        const known = PRICEBOOK.find((p) => p.code === code);
-        dispatch(session.addItem(known ?? { code, description: `UPC ${code}`, priceCents: 100 }));
+        const hit = pricebookIndex.get(code) ?? quickKeys.find((p) => p.code === code);
+        dispatch(
+          session.addItem(
+            hit
+              ? { code: hit.code, description: hit.description, priceCents: hit.priceCents }
+              : { code, description: `UPC ${code}`, priceCents: 100 },
+          ),
+        );
       },
       voidLine: (lineNumber: number) => dispatch(session.voidLine(lineNumber)),
       setQuantity: (lineNumber: number, qty: number) => dispatch(session.setQuantity(lineNumber, qty)),
@@ -154,6 +203,24 @@ export function useEmulator(): {
       tender: (kind: TenderKind, amountCents?: number) => dispatch(session.tender(kind, amountCents)),
       voidTicket: () => dispatch(session.voidTicket()),
     }),
-    [snapshot, status, config, playerConfig, setPlayerConfig, log, connect, disconnect, dispatch, setLocale, session],
+    [
+      snapshot,
+      status,
+      config,
+      playerConfig,
+      setPlayerConfig,
+      log,
+      connect,
+      disconnect,
+      dispatch,
+      setLocale,
+      session,
+      quickKeys,
+      pricebookDir,
+      setPricebookDir,
+      pricebookStatus,
+      loadPricebook,
+      pricebookIndex,
+    ],
   );
 }

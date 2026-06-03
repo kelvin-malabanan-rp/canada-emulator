@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useEmulator, PRICEBOOK } from './useEmulator';
+import { useEmulator } from './useEmulator';
 import { formatCurrency } from '../../core/currency';
 import type { ConnState } from '../../core/posTypes';
 import './App.css';
@@ -81,9 +81,29 @@ function App(): JSX.Element {
 
       <div className="body">
         <section className="left">
+          <h3>Pricebook</h3>
+          <p className="hint">
+            Loads <code>&lt;PlayerCode&gt;-*.xml</code> for the Player Code above — quick keys &amp; scans use real items.
+          </p>
+          <div className="row">
+            <input
+              value={e.pricebookDir}
+              onChange={(ev) => e.setPricebookDir(ev.target.value)}
+              placeholder="pricebook directory"
+            />
+            <button onClick={() => void e.loadPricebook()}>Load</button>
+          </div>
+          {e.pricebookStatus && (
+            <p className={`pbstatus ${e.pricebookStatus.ok ? 'ok' : 'err'}`}>
+              {e.pricebookStatus.ok
+                ? `Loaded ${e.pricebookStatus.count} items from ${e.pricebookStatus.path.split('/').pop()}`
+                : `Error: ${e.pricebookStatus.error}`}
+            </p>
+          )}
+
           <h3>Quick Keys</h3>
           <div className="grid">
-            {PRICEBOOK.map((p) => (
+            {e.quickKeys.map((p) => (
               <button key={p.code} className="key" onClick={() => e.addItem(p)}>
                 <span>{p.description}</span>
                 <small>{formatCurrency(p.priceCents, locale)}</small>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parsePricebook, buildPricebookIndex, loadPricebookIndex } from './pricebook';
+import { parsePricebook, buildPricebookIndex, loadPricebookIndex, resolvePricebookFilename, pickQuickKeys } from './pricebook';
 
 const XML = `<?xml version="1.0" encoding="UTF-8"?>
 <OCT2000-IMPORT siteno="31989">
@@ -39,5 +39,41 @@ describe('buildPricebookIndex / loadPricebookIndex', () => {
   it('buildPricebookIndex stamps the looked-up code onto each entry', () => {
     const index = buildPricebookIndex(parsePricebook(XML));
     expect(index.get('049000000443')?.code).toBe('049000000443');
+  });
+});
+
+describe('resolvePricebookFilename', () => {
+  const files = ['31989-1706723713125.xml', '31989-1700000000000.xml', '40000-1.xml', 'notes.txt'];
+
+  it('matches the player/site code and prefers the most recent', () => {
+    expect(resolvePricebookFilename(files, '31989')).toBe('31989-1706723713125.xml');
+  });
+
+  it('matches a different code', () => {
+    expect(resolvePricebookFilename(files, '40000')).toBe('40000-1.xml');
+  });
+
+  it('falls back to exact <code>.xml', () => {
+    expect(resolvePricebookFilename(['31989.xml'], '31989')).toBe('31989.xml');
+  });
+
+  it('returns null for no match or empty code', () => {
+    expect(resolvePricebookFilename(files, '99999')).toBeNull();
+    expect(resolvePricebookFilename(files, '')).toBeNull();
+  });
+});
+
+describe('pickQuickKeys', () => {
+  it('selects items with barcode + description + price, up to the limit', () => {
+    const entries = parsePricebook(XML);
+    const keys = pickQuickKeys(entries);
+    expect(keys).toEqual([
+      { code: '049000000443', description: 'Coke 20oz', priceCents: 229 },
+      { code: '012000001291', description: 'Chips', priceCents: 319 },
+    ]);
+  });
+
+  it('respects the limit', () => {
+    expect(pickQuickKeys(parsePricebook(XML), 1)).toHaveLength(1);
   });
 });
