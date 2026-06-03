@@ -1,0 +1,207 @@
+/**
+ * RegisterSession — orchestrates the Basket + Radiant6CanadaEncoder for one
+ * register lane. Every action returns the ordered list of wire messages to
+ * push to CK Player 2.0 (VJ lines + pole windows) and mutates the basket.
+ *
+ * Pure / browser-safe so the UI stays a thin shell over tested logic.
+ */
+import { Basket } from './Basket';
+import { Radiant6CanadaEncoder } from './Radiant6CanadaEncoder';
+import type { Channel } from './posTypes';
+import type { PosLocale } from './currency';
+
+export interface WireMessage {
+  channel: Channel;
+  data: string;
+}
+
+export interface AddItemInput {
+  code: string;
+  description: string;
+  priceCents: number;
+  quantity?: number;
+}
+
+export interface LineSnapshot {
+  lineNumber: number;
+  code: string;
+  description: string;
+  quantity: number;
+  unitPriceCents: number;
+  extendedCents: number;
+  voided: boolean;
+}
+
+export interface SessionSnapshot {
+  tx: number;
+  started: boolean;
+  locale: PosLocale;
+  lines: LineSnapshot[];
+  subtotalCents: number;
+  taxCents: number;
+  totalCents: number;
+}
+
+export type TenderKind = 'cash-exact' | 'next-dollar' | 'amount';
+
+export interface RegisterSessionOptions {
+  terminalNumber?: number;
+  taxRateBps?: number;
+  operatorId?: string;
+  operatorName?: string;
+  startTx?: number;
+  clock?: () => Date;
+}
+
+export class RegisterSession {
+  private readonly encoder: Radiant6CanadaEncoder;
+  private readonly taxRateBps: number;
+  private readonly operatorId: string;
+  private readonly operatorName: string;
+  private basket: Basket;
+  private tx: number;
+  private started = false;
+  locale: PosLocale = 'en';
+
+  constructor(options: RegisterSessionOptions = {}) {
+    this.encoder = new Radiant6CanadaEncoder({
+      terminalNumber: options.terminalNumber ?? 1,
+      clock: options.clock,
+    });
+    this.taxRateBps = options.taxRateBps ?? 500;
+    this.operatorId = options.operatorId ?? '12599';
+    this.operatorName = options.operatorName ?? 'Timothy';
+    this.tx = options.startTx ?? 1;
+    this.basket = new Basket({ taxRateBps: this.taxRateBps });
+  }
+
+  setLocale(locale: PosLocale): void {
+    this.locale = locale;
+  }
+
+  /** Pole window reflecting the current running balance (incl. tax). */
+  private balanceMessage(): WireMessage {
+    return { channel: 'pole', data: this.encoder.poleBalance(this.basket.totalCents(), this.locale) };
+  }
+
+  /** Open the lane if not already open (idempotent). Returns any open messages. */
+  private ensureStarted(): WireMessage[] {
+    if (this.started) return [];
+    this.started = true;
+    return [
+      { channel: 'vj', data: this.encoder.registerOpen({ tx: this.tx, operatorId: this.operatorId, operatorName: this.operatorName }) },
+      { channel: 'vj', data: this.encoder.basketStarted({ tx: this.tx }) },
+      this.balanceMessage(),
+    ];
+  }
+
+  open(): WireMessage[] {
+    return this.ensureStarted();
+  }
+
+  addItem(input: AddItemInput): WireMessage[] {
+    const messages = this.ensureStarted();
+    const li = this.basket.addItem(input);
+    messages.push({
+      channel: 'vj',
+      data: this.encoder.itemAdd({
+        tx: this.tx,
+        lineNumber: li.lineNumber,
+        barcode: li.code,
+        description: li.description,
+        priceCents: li.unitPriceCents,
+        quantity: li.quantity,
+        locale: this.locale,
+      }),
+    });
+    messages.push({ channel: 'pole', data: this.encoder.poleItem(li.quantity, li.description, li.unitPriceCents, this.locale) });
+    messages.push(this.balanceMessage());
+    return messages;
+  }
+
+  voidLine(lineNumber: number): WireMessage[] {
+    this.basket.voidItem(lineNumber);
+    return [
+      { channel: 'vj', data: this.encoder.itemVoid({ tx: this.tx, lineNumber }) },
+      this.balanceMessage(),
+    ];
+  }
+
+  setQuantity(lineNumber: number, quantity: number): WireMessage[] {
+    const li = this.basket.find(lineNumber);
+    const oldQuantity = li?.quantity ?? 1;
+    this.basket.setQuantity(lineNumber, quantity);
+    const extended = this.basket.find(lineNumber)?.extendedCents() ?? 0;
+    return [
+      { channel: 'vj', data: this.encoder.qtyChange({ tx: this.tx, lineNumber, oldQuantity, newQuantity: quantity, extendedPriceCents: extended, locale: this.locale }) },
+      this.balanceMessage(),
+    ];
+  }
+
+  setPrice(lineNumber: number, priceCents: number): WireMessage[] {
+    this.basket.setPrice(lineNumber, priceCents);
+    return [
+      { channel: 'vj', data: this.encoder.priceOverride({ tx: this.tx, lineNumber, newUnitPriceCents: priceCents, locale: this.locale }) },
+      this.balanceMessage(),
+    ];
+  }
+
+  /** EasyPay / loyalty scan (EventId 1024). cardNumber may be a loyalty id or a 12-digit UPC. */
+  loyalty(cardNumber: string, cardId?: string): WireMessage[] {
+    this.ensureStarted();
+    return [{ channel: 'vj', data: this.encoder.loyalty({ tx: this.tx, cardNumber, cardId }) }];
+  }
+
+  /**
+   * Tender and finish the sale. Emits Arrondir rounding (if the cash total
+   * differs from the exact total), the tender (1007), the pole change window,
+   * the change (1008) and basket end (1002). Resets for the next sale.
+   */
+  tender(kind: TenderKind, amountCents?: number): WireMessage[] {
+    const messages = this.ensureStarted();
+    const exactTotal = this.basket.totalCents();
+    const roundedTotal = this.basket.roundCashTotal();
+
+    let tendered: number;
+    if (kind === 'cash-exact') tendered = roundedTotal;
+    else if (kind === 'next-dollar') tendered = this.basket.nextDollarCents();
+    else tendered = amountCents ?? roundedTotal;
+
+    const change = Math.max(0, tendered - roundedTotal);
+    const roundingDelta = roundedTotal - exactTotal;
+
+    if (roundingDelta !== 0) {
+      messages.push({ channel: 'vj', data: this.encoder.rounding({ tx: this.tx, amountCents: roundingDelta, locale: this.locale }) });
+    }
+    messages.push({ channel: 'vj', data: this.encoder.tender({ tx: this.tx, amountCents: tendered, mopDescription: 'Cash', locale: this.locale }) });
+    messages.push({ channel: 'pole', data: this.encoder.poleChange(change, this.locale) });
+    messages.push({ channel: 'vj', data: this.encoder.change({ tx: this.tx, amountCents: change, locale: this.locale }) });
+    messages.push({ channel: 'vj', data: this.encoder.basketEnd({ tx: this.tx, type: 'Sales', completion: 'Completed' }) });
+
+    // Reset for the next sale.
+    this.basket = new Basket({ taxRateBps: this.taxRateBps });
+    this.tx += 1;
+    this.started = false;
+    return messages;
+  }
+
+  snapshot(): SessionSnapshot {
+    return {
+      tx: this.tx,
+      started: this.started,
+      locale: this.locale,
+      lines: this.basket.lineItems().map((li) => ({
+        lineNumber: li.lineNumber,
+        code: li.code,
+        description: li.description,
+        quantity: li.quantity,
+        unitPriceCents: li.unitPriceCents,
+        extendedCents: li.extendedCents(),
+        voided: li.voided,
+      })),
+      subtotalCents: this.basket.subtotalCents(),
+      taxCents: this.basket.taxCents(),
+      totalCents: this.basket.totalCents(),
+    };
+  }
+}
