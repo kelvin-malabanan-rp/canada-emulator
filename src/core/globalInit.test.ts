@@ -1,0 +1,74 @@
+import { describe, it, expect } from 'vitest';
+import {
+  parseProperties,
+  extractLocationCode,
+  deriveTenant,
+  extractEndpoints,
+  toGlobalInitConfig,
+  resolveTenantUrl,
+} from './globalInit';
+
+// Real generated config (the "# Generated on …" block), with Java-escaped colons.
+const RAW = `# Generated on 2026-06-03T07:31:38.143Z
+player.code=ca-radmarketing-1
+player.key=d8362376-b40a-4f75-8757-4c5a2582b06e-e2e
+init.url=https\\://player.e2e.circlekliftdev.com/api/lift/system/services/init
+heartbeat.url=https\\://player.e2e.circlekliftdev.com/api/lift/{tenantCode}/services/heartbeats/
+pricebook.url=
+manifest.url=https\\://player.e2e.circlekliftdev.com/api/lift/{tenantCode}/manifests
+masterItemData.url=https\\://player.e2e.circlekliftdev.com/api/lift/{tenantCode}/s3/files/item_master/tenant_{tenantCode}_master_data_file.zip
+pricebook.pricebookTypeUrl=`;
+
+describe('parseProperties', () => {
+  it('parses keys and unescapes Java backslash escapes in URLs', () => {
+    const p = parseProperties(RAW);
+    expect(p.get('player.code')).toBe('ca-radmarketing-1');
+    expect(p.get('init.url')).toBe('https://player.e2e.circlekliftdev.com/api/lift/system/services/init');
+    expect(p.get('pricebook.url')).toBe('');
+  });
+
+  it('skips comments and blank lines', () => {
+    expect(parseProperties('# c\n\nplayer.code=x').get('player.code')).toBe('x');
+  });
+});
+
+describe('extractLocationCode / deriveTenant', () => {
+  it('strips a trailing numeric segment for location code', () => {
+    expect(extractLocationCode('ca-radmarketing-1')).toBe('ca-radmarketing');
+    expect(extractLocationCode('ie-12345-2')).toBe('ie-12345');
+  });
+
+  it('derives tenant from the player code leading segment when no tenant property', () => {
+    expect(deriveTenant(parseProperties(RAW), 'ca-radmarketing-1')).toBe('ca');
+    expect(deriveTenant(new Map([['tenant', 'ie']]), 'x-1')).toBe('ie');
+  });
+});
+
+describe('extractEndpoints / toGlobalInitConfig', () => {
+  it('extracts all endpoint keys (empty string when absent)', () => {
+    const e = extractEndpoints(parseProperties(RAW));
+    expect(e['masterItemData.url']).toContain('item_master');
+    expect(e['pricebook.url']).toBe('');
+    expect(e['scoreboard.url']).toBe('');
+  });
+
+  it('builds a config with player code, tenant, location and endpoints', () => {
+    const cfg = toGlobalInitConfig(RAW, 'End to End Test Lab')!;
+    expect(cfg.playerCode).toBe('ca-radmarketing-1');
+    expect(cfg.tenant).toBe('ca');
+    expect(cfg.locationCode).toBe('ca-radmarketing');
+    expect(cfg.datacenter).toBe('End to End Test Lab');
+    expect(cfg.endpoints['init.url']).toContain('https://');
+  });
+
+  it('returns null when there is no player.code (unrecognised key)', () => {
+    expect(toGlobalInitConfig('# nope\nfoo=bar')).toBeNull();
+  });
+});
+
+describe('resolveTenantUrl', () => {
+  it('replaces {tenantCode} tokens', () => {
+    expect(resolveTenantUrl('https://x/api/lift/{tenantCode}/manifests', 'ca')).toBe('https://x/api/lift/ca/manifests');
+    expect(resolveTenantUrl('.../tenant_{tenantCode}_master.zip', 'ca')).toBe('.../tenant_ca_master.zip');
+  });
+});

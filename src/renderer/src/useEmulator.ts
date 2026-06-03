@@ -16,6 +16,7 @@ import {
   type QuickKeyItem,
   type PricebookLoadResult,
 } from '../../core/pricebook';
+import type { GlobalInitConfig } from '../../core/globalInit';
 
 export interface LogEntry {
   id: number;
@@ -49,6 +50,9 @@ export function useEmulator(): {
   setConfig: (c: PosConfig) => void;
   playerConfig: PlayerConfig;
   setPlayerConfig: (c: PlayerConfig) => void;
+  registerPlayer: () => Promise<void>;
+  globalInit: GlobalInitConfig | null;
+  globalInitError: string | null;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   log: LogEntry[];
@@ -165,6 +169,23 @@ export function useEmulator(): {
     setPricebookEntries(result.ok ? result.entries : []);
   }, [pricebookDir, playerConfig.playerCode]);
 
+  const [globalInit, setGlobalInit] = useState<GlobalInitConfig | null>(null);
+  const [globalInitError, setGlobalInitError] = useState<string | null>(null);
+
+  const registerPlayer = useCallback(async () => {
+    setGlobalInitError(null);
+    const res = await window.emulator.registerPlayer({ playerKey: playerConfig.playerKey });
+    if (res.ok && res.config) {
+      setGlobalInit(res.config);
+      // Adopt the discovered player code so the rest of the app (pricebook,
+      // tenant) lines up with the registered player.
+      setPlayerConfig({ ...playerConfig, playerCode: res.config.playerCode });
+    } else {
+      setGlobalInit(null);
+      setGlobalInitError(res.error ?? 'Registration failed');
+    }
+  }, [playerConfig, setPlayerConfig]);
+
   return useMemo(
     () => ({
       snapshot,
@@ -173,6 +194,9 @@ export function useEmulator(): {
       setConfig,
       playerConfig,
       setPlayerConfig,
+      registerPlayer,
+      globalInit,
+      globalInitError,
       connect,
       disconnect,
       log,
@@ -221,6 +245,9 @@ export function useEmulator(): {
       pricebookStatus,
       loadPricebook,
       pricebookIndex,
+      registerPlayer,
+      globalInit,
+      globalInitError,
     ],
   );
 }

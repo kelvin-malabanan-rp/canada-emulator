@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useEmulator } from './useEmulator';
+import { useEmulator, PRICEBOOK } from './useEmulator';
 import { formatCurrency } from '../../core/currency';
 import type { ConnState } from '../../core/posTypes';
 import './App.css';
@@ -76,34 +76,32 @@ function App(): JSX.Element {
           placeholder="https://player.circlekliftdev.com/api/lift/"
           onChange={(ev) => e.setPlayerConfig({ ...e.playerConfig, backendBaseUrl: ev.target.value })}
         />
-        <small className="hint">Saved locally — edit anytime, like CKPlayer2.0.</small>
+        <button onClick={() => void e.registerPlayer()}>Register</button>
+        <small className="hint">Register sends the player.key to the datacenters (like CKP2 + legacy).</small>
       </header>
+
+      {(e.globalInit || e.globalInitError) && (
+        <div className="initcfg">
+          {e.globalInit ? (
+            <>
+              <div className="initmeta">
+                <span>player.code=<b>{e.globalInit.playerCode}</b></span>
+                <span>tenant=<b>{e.globalInit.tenant}</b></span>
+                <span>{e.globalInit.datacenter}</span>
+              </div>
+              <pre>{e.globalInit.raw}</pre>
+            </>
+          ) : (
+            <div className="initerr">Register failed: {e.globalInitError}</div>
+          )}
+        </div>
+      )}
 
       <div className="body">
         <section className="left">
-          <h3>Pricebook</h3>
-          <p className="hint">
-            Loads <code>&lt;PlayerCode&gt;-*.xml</code> for the Player Code above — quick keys &amp; scans use real items.
-          </p>
-          <div className="row">
-            <input
-              value={e.pricebookDir}
-              onChange={(ev) => e.setPricebookDir(ev.target.value)}
-              placeholder="pricebook directory"
-            />
-            <button onClick={() => void e.loadPricebook()}>Load</button>
-          </div>
-          {e.pricebookStatus && (
-            <p className={`pbstatus ${e.pricebookStatus.ok ? 'ok' : 'err'}`}>
-              {e.pricebookStatus.ok
-                ? `Loaded ${e.pricebookStatus.count} items from ${e.pricebookStatus.path.split('/').pop()}`
-                : `Error: ${e.pricebookStatus.error}`}
-            </p>
-          )}
-
           <h3>Quick Keys</h3>
           <div className="grid">
-            {e.quickKeys.map((p) => (
+            {PRICEBOOK.map((p) => (
               <button key={p.code} className="key" onClick={() => e.addItem(p)}>
                 <span>{p.description}</span>
                 <small>{formatCurrency(p.priceCents, locale)}</small>

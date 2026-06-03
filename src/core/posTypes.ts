@@ -1,5 +1,6 @@
 /** Shared, browser-safe transport types used by main, preload and renderer. */
 import type { PricebookLoadResult } from './pricebook';
+import type { GlobalInitResult } from './globalInit';
 
 export type Channel = 'vj' | 'pole';
 export type ConnState = 'connected' | 'connecting' | 'disconnected';
@@ -56,4 +57,6 @@ export interface EmulatorBridge {
   onStatus(cb: (status: Status) => void): () => void;
   /** Load the pricebook matching the player code from a local directory. */
   loadPricebook(req: { dir: string; playerCode: string }): Promise<PricebookLoadResult>;
+  /** Register the player.key against the datacenters and return the generated config. */
+  registerPlayer(req: { playerKey: string; product?: string }): Promise<GlobalInitResult>;
 }

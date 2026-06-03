@@ -1,12 +1,49 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'path';
 import { readdir, readFile } from 'fs/promises';
+import { networkInterfaces } from 'os';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { PosTransport } from './PosTransport';
 import type { Channel, Status } from './PosTransport';
 import type { PosConfig } from '../core/posTypes';
 import { parsePricebook, resolvePricebookFilename } from '../core/pricebook';
 import type { PricebookLoadResult } from '../core/pricebook';
+import { DATACENTERS, toGlobalInitConfig } from '../core/globalInit';
+import type { GlobalInitResult } from '../core/globalInit';
+
+/** First non-internal MAC address (matches the player's GlobalInit param). */
+function getMacAddress(): string {
+  for (const ifaces of Object.values(networkInterfaces())) {
+    for (const iface of ifaces ?? []) {
+      if (!iface.internal && iface.mac && iface.mac !== '00:00:00:00:00:00') return iface.mac;
+    }
+  }
+  return '00:00:00:00:00:00';
+}
+
+async function fetchDatacenterConfig(
+  register: string,
+  name: string,
+  playerKey: string,
+  product: string,
+  mac: string,
+): Promise<GlobalInitResult['config'] | null> {
+  const url = new URL(register);
+  url.searchParams.set('product', product);
+  url.searchParams.set('initKey', playerKey);
+  url.searchParams.set('macAddress', mac);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(url, { signal: controller.signal, headers: { 'User-Agent': 'CK-Player-2.0/1.0' } });
+    if (!res.ok) return null;
+    return toGlobalInitConfig(await res.text(), name) ?? null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 let transport: PosTransport | null = null;
 
@@ -65,6 +102,32 @@ function registerEmulatorIpc(getWindow: () => BrowserWindow | null): void {
           path: dir,
           error: err instanceof Error ? err.message : String(err),
         };
+      }
+    },
+  );
+
+  // GlobalInit: send the player.key to each datacenter's services/init and
+  // return the first generated config (player.code + tenant endpoint URLs).
+  // Mirrors CKPlayer2.0 GlobalInitClient + the legacy Java player.
+  ipcMain.handle(
+    'globalinit:register',
+    async (_evt, req: { playerKey: string; product?: string }): Promise<GlobalInitResult> => {
+      const playerKey = req.playerKey?.trim();
+      if (!playerKey) return { ok: false, error: 'No player.key provided' };
+      const product = req.product?.trim() || 'ckplayer2';
+      const mac = getMacAddress();
+      try {
+        const results = await Promise.allSettled(
+          DATACENTERS.map((dc) => fetchDatacenterConfig(dc.register, dc.name, playerKey, product, mac)),
+        );
+        for (const r of results) {
+          if (r.status === 'fulfilled' && r.value) {
+            return { ok: true, config: r.value };
+          }
+        }
+        return { ok: false, error: 'player.key not registered on any datacenter (or network unreachable)' };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
       }
     },
   );

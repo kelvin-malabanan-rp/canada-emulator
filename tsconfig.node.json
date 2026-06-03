@@ -10,6 +10,6 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["electron.vite.config.ts", "src/main/**/*", "src/preload/**/*", "src/core/posTypes.ts", "src/core/pricebook.ts"],
+  "include": ["electron.vite.config.ts", "src/main/**/*", "src/preload/**/*", "src/core/posTypes.ts", "src/core/pricebook.ts", "src/core/globalInit.ts"],
   "exclude": ["src/**/*.test.ts"]
 }
