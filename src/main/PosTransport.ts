@@ -7,15 +7,11 @@
  * Node-only (uses `net`). Holds NO business logic — it ships bytes.
  */
 import net from 'net';
+import type { Channel, ConnState, Status, PosConfig } from '../core/posTypes';
 
-export type Channel = 'vj' | 'pole';
-export type ConnState = 'connected' | 'connecting' | 'disconnected';
-export type Status = Record<Channel, ConnState>;
+export type { Channel, ConnState, Status } from '../core/posTypes';
 
-export interface PosTransportConfig {
-  host: string;
-  vjPort: number;
-  polePort: number;
+export interface PosTransportConfig extends PosConfig {
   /** Delay before retrying a dropped/failed connection. Default 2000ms. */
   reconnectDelayMs?: number;
 }

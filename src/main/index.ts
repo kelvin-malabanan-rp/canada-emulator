@@ -1,9 +1,42 @@
-import { app, shell, BrowserWindow } from 'electron';
+import { app, shell, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
+import { PosTransport } from './PosTransport';
+import type { Channel, Status } from './PosTransport';
+import type { PosConfig } from '../core/posTypes';
+
+let transport: PosTransport | null = null;
+
+function registerEmulatorIpc(getWindow: () => BrowserWindow | null): void {
+  ipcMain.handle('emulator:connect', async (_evt, config: PosConfig) => {
+    transport?.close();
+    transport = new PosTransport(config);
+    transport.onStatus((status: Status) => {
+      getWindow()?.webContents.send('emulator:status-changed', status);
+    });
+    await transport.connect();
+    return transport.status();
+  });
+
+  ipcMain.handle('emulator:disconnect', () => {
+    transport?.close();
+    transport = null;
+    return { vj: 'disconnected', pole: 'disconnected' } satisfies Status;
+  });
+
+  ipcMain.handle('emulator:send', (_evt, payload: { channel: Channel; data: string }) => {
+    return transport?.send(payload.channel, payload.data) ?? false;
+  });
+
+  ipcMain.handle('emulator:status', () => {
+    return transport?.status() ?? ({ vj: 'disconnected', pole: 'disconnected' } satisfies Status);
+  });
+}
+
+let mainWindow: BrowserWindow | null = null;
 
 function createWindow(): void {
-  const mainWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width: 1100,
     height: 800,
     show: false,
@@ -14,20 +47,25 @@ function createWindow(): void {
     }
   });
 
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.show();
+  win.on('ready-to-show', () => {
+    win.show();
+  });
+  win.on('closed', () => {
+    mainWindow = null;
   });
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
+  win.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url);
     return { action: 'deny' };
   });
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL']);
+    win.loadURL(process.env['ELECTRON_RENDERER_URL']);
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
+    win.loadFile(join(__dirname, '../renderer/index.html'));
   }
+
+  mainWindow = win;
 }
 
 app.whenReady().then(() => {
@@ -37,6 +75,7 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window);
   });
 
+  registerEmulatorIpc(() => mainWindow);
   createWindow();
 
   app.on('activate', () => {

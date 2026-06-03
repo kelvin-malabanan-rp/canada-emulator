@@ -12,5 +12,6 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src/renderer/**/*", "src/core/**/*", "src/preload/index.d.ts"]
+  "include": ["src/renderer/**/*", "src/core/**/*", "src/preload/index.d.ts"],
+  "exclude": ["src/**/*.test.ts", "src/**/__roundtrip__/**"]
 }
