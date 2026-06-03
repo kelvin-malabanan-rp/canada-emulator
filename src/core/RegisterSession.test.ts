@@ -57,6 +57,18 @@ describe('RegisterSession', () => {
     expect(snap.started).toBe(false);
   });
 
+  it('voidTicket emits a cancelled basketEnd (1002), clears pole and resets', () => {
+    const s = new RegisterSession();
+    s.addItem({ code: 'a', description: 'A', priceCents: 169 });
+    const msgs = s.voidTicket();
+    const end = msgs.find((m) => m.data.includes('EventId=1002'))!;
+    expect(end.data).toContain('TransactionCompletionType=Cancelled');
+    const snap = s.snapshot();
+    expect(snap.tx).toBe(2);
+    expect(snap.lines).toHaveLength(0);
+    expect(snap.started).toBe(false);
+  });
+
   it('no rounding event when the total is already a multiple of 5 cents', () => {
     const s = new RegisterSession({ taxRateBps: 0 });
     s.addItem({ code: 'a', description: 'A', priceCents: 200 });

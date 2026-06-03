@@ -132,6 +132,7 @@ function App(): JSX.Element {
             <button onClick={() => e.tender('cash-exact')}>Cash (exact)</button>
             <button onClick={() => e.tender('next-dollar')}>Next $</button>
             <button onClick={() => e.tender('amount', snapshot.totalCents + 500)}>Cash +$5</button>
+            <button className="voidticket" onClick={() => e.voidTicket()}>Void Ticket</button>
           </div>
         </section>
 

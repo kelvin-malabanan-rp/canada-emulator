@@ -45,6 +45,7 @@ export function useEmulator(): {
   setPrice: (lineNumber: number, priceCents: number) => void;
   loyalty: (cardNumber: string) => void;
   tender: (kind: TenderKind, amountCents?: number) => void;
+  voidTicket: () => void;
 } {
   const sessionRef = useRef<RegisterSession>(null as unknown as RegisterSession);
   if (sessionRef.current === null) sessionRef.current = new RegisterSession();
@@ -119,6 +120,7 @@ export function useEmulator(): {
       setPrice: (lineNumber: number, priceCents: number) => dispatch(session.setPrice(lineNumber, priceCents)),
       loyalty: (cardNumber: string) => dispatch(session.loyalty(cardNumber)),
       tender: (kind: TenderKind, amountCents?: number) => dispatch(session.tender(kind, amountCents)),
+      voidTicket: () => dispatch(session.voidTicket()),
     }),
     [snapshot, status, config, log, connect, disconnect, dispatch, setLocale, session],
   );

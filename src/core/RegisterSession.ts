@@ -146,6 +146,22 @@ export class RegisterSession {
     ];
   }
 
+  /**
+   * Void the whole ticket — EventId 1002 with TransactionCompletionType=Cancelled
+   * (the parser decodes this as BASKET_VOIDED). Clears the pole and resets for
+   * the next sale.
+   */
+  voidTicket(): WireMessage[] {
+    const messages = this.ensureStarted();
+    messages.push({ channel: 'vj', data: this.encoder.basketEnd({ tx: this.tx, type: 'Sales', completion: 'Cancelled' }) });
+
+    this.basket = new Basket({ taxRateBps: this.taxRateBps });
+    messages.push(this.balanceMessage()); // pole balance now 0
+    this.tx += 1;
+    this.started = false;
+    return messages;
+  }
+
   /** EasyPay / loyalty scan (EventId 1024). cardNumber may be a loyalty id or a 12-digit UPC. */
   loyalty(cardNumber: string, cardId?: string): WireMessage[] {
     this.ensureStarted();
