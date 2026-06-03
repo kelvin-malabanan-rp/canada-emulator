@@ -39,6 +39,7 @@ export function useEmulator(): {
   clearLog: () => void;
   setLocale: (l: PosLocale) => void;
   addItem: (item: PricebookItem) => void;
+  addCustom: (input: { code: string; description: string; priceCents: number; quantity: number }) => void;
   scan: (code: string) => void;
   voidLine: (lineNumber: number) => void;
   setQuantity: (lineNumber: number, qty: number) => void;
@@ -111,6 +112,8 @@ export function useEmulator(): {
       clearLog: () => setLog([]),
       setLocale,
       addItem: (item: PricebookItem) => dispatch(session.addItem(item)),
+      addCustom: (input: { code: string; description: string; priceCents: number; quantity: number }) =>
+        dispatch(session.addItem(input)),
       scan: (code: string) => {
         const known = PRICEBOOK.find((p) => p.code === code);
         dispatch(session.addItem(known ?? { code, description: `UPC ${code}`, priceCents: 100 }));

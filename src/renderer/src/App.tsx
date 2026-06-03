@@ -15,6 +15,9 @@ function App(): JSX.Element {
   const locale = snapshot.locale;
   const [scanCode, setScanCode] = useState('');
   const [card, setCard] = useState('8018782603800034999992');
+  const [trigUpc, setTrigUpc] = useState('049000000443');
+  const [trigQty, setTrigQty] = useState(1);
+  const [trigPrice, setTrigPrice] = useState('2.29');
 
   return (
     <div className="app">
@@ -80,6 +83,40 @@ function App(): JSX.Element {
             <input value={card} onChange={(ev) => setCard(ev.target.value)} placeholder="loyalty # or 12-digit UPC" />
             <button onClick={() => e.loyalty(card.trim())}>Scan Card</button>
           </div>
+
+          <h3>Ad Triggers</h3>
+          <p className="hint">
+            Fires <code>ITEM_ADDED</code> — drives <code>itemsInBasket</code>, <code>itemsNotInBasket</code>,{' '}
+            <code>nthItemScanned</code>, <code>basket</code>. Set the UPC/qty to whatever your loaded CA ad set targets.
+          </p>
+          <div className="row">
+            <input value={trigUpc} onChange={(ev) => setTrigUpc(ev.target.value)} placeholder="trigger UPC" />
+            <input
+              className="qty"
+              type="number"
+              min={1}
+              value={trigQty}
+              onChange={(ev) => setTrigQty(Math.max(1, Number(ev.target.value)))}
+            />
+            <input className="qty" value={trigPrice} onChange={(ev) => setTrigPrice(ev.target.value)} placeholder="$" />
+            <button
+              onClick={() =>
+                e.addCustom({
+                  code: trigUpc.trim(),
+                  description: `Trigger ${trigUpc.trim()}`,
+                  priceCents: Math.round((parseFloat(trigPrice) || 0) * 100),
+                  quantity: trigQty,
+                })
+              }
+            >
+              Fire Item
+            </button>
+          </div>
+          <p className="hint">
+            <code>ifLoyaltySignedIn</code> uses the loyalty button above (note: the CA 1024 event needs the Epic-6
+            discriminator to reach the basket). <code>onPromo</code> / <code>totalPrice</code> depend on CKPlayer2.0's
+            loaded pricebook/promos, not the emulator.
+          </p>
         </section>
 
         <section className="center">

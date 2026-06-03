@@ -38,6 +38,15 @@ describe('RegisterSession', () => {
     expect(s.snapshot().subtotalCents).toBe(0);
   });
 
+  it('addItem with quantity encodes Quantity (drives nthItemScanned / basket ad triggers)', () => {
+    const s = new RegisterSession();
+    const msgs = s.addItem({ code: '628700001111', description: 'Combo', priceCents: 100, quantity: 2 });
+    const itemAdd = msgs.find((m) => m.data.includes('EventId=1011'))!;
+    expect(itemAdd.data).toContain('Barcode=628700001111');
+    expect(itemAdd.data).toContain('Quantity=2.000');
+    expect(s.snapshot().lines[0].quantity).toBe(2);
+  });
+
   it('loyalty emits EventId 1024 with the card number', () => {
     const s = new RegisterSession();
     const msgs = s.loyalty('8018782603800034999992');
