@@ -1,0 +1,28 @@
+import { describe, it, expect } from 'vitest';
+import { normalizePlayerConfig, DEFAULT_POS_CONFIG, DEFAULT_PLAYER_CONFIG } from './posTypes';
+
+describe('normalizePlayerConfig', () => {
+  it('returns defaults for null/empty input', () => {
+    expect(normalizePlayerConfig(null)).toEqual(DEFAULT_PLAYER_CONFIG);
+    expect(normalizePlayerConfig({})).toEqual(DEFAULT_PLAYER_CONFIG);
+  });
+
+  it('trims provided values', () => {
+    expect(normalizePlayerConfig({ playerCode: '  31989  ', playerKey: ' abc ' })).toMatchObject({
+      playerCode: '31989',
+      playerKey: 'abc',
+    });
+  });
+
+  it('falls back to the default backend URL when blank', () => {
+    expect(normalizePlayerConfig({ backendBaseUrl: '   ' }).backendBaseUrl).toBe(DEFAULT_PLAYER_CONFIG.backendBaseUrl);
+  });
+
+  it('keeps a custom backend URL', () => {
+    expect(normalizePlayerConfig({ backendBaseUrl: 'https://x.test/api/' }).backendBaseUrl).toBe('https://x.test/api/');
+  });
+
+  it('exposes sane defaults for the POS connection', () => {
+    expect(DEFAULT_POS_CONFIG).toEqual({ host: '127.0.0.1', vjPort: 5438, polePort: 5439 });
+  });
+});

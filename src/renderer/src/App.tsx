@@ -53,6 +53,32 @@ function App(): JSX.Element {
         </div>
       </header>
 
+      <header className="bar creds">
+        <span className="lbl">Player Code</span>
+        <input
+          className="host"
+          value={e.playerConfig.playerCode}
+          placeholder="e.g. 31989"
+          onChange={(ev) => e.setPlayerConfig({ ...e.playerConfig, playerCode: ev.target.value })}
+        />
+        <span className="lbl">Player Key</span>
+        <input
+          className="host"
+          type="password"
+          value={e.playerConfig.playerKey}
+          placeholder="player.key"
+          onChange={(ev) => e.setPlayerConfig({ ...e.playerConfig, playerKey: ev.target.value })}
+        />
+        <span className="lbl">Backend</span>
+        <input
+          className="url"
+          value={e.playerConfig.backendBaseUrl}
+          placeholder="https://player.circlekliftdev.com/api/lift/"
+          onChange={(ev) => e.setPlayerConfig({ ...e.playerConfig, backendBaseUrl: ev.target.value })}
+        />
+        <small className="hint">Saved locally — edit anytime, like CKPlayer2.0.</small>
+      </header>
+
       <div className="body">
         <section className="left">
           <h3>Quick Keys</h3>

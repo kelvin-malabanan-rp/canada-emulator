@@ -24,6 +24,10 @@ body { margin: 0; }
 .bar input.port { width: 70px; }
 .bar button { background: #2d6cdf; color: white; border: 0; border-radius: 4px; padding: 5px 10px; cursor: pointer; }
 .bar button:hover { background: #3a78ea; }
+.bar.creds { background: #1e2128; }
+.bar.creds .lbl { font-size: 11px; color: #8b93a3; text-transform: uppercase; letter-spacing: .5px; }
+.bar.creds input.url { width: 280px; }
+.bar.creds .hint { margin: 0 0 0 auto; }
 .spacer { flex: 1; }
 .locale button { background: #3a3f4a; margin-left: 4px; }
 .locale button.on { background: #c45b3e; }

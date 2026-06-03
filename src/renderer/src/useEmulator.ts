@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RegisterSession, type WireMessage, type SessionSnapshot, type TenderKind } from '../../core/RegisterSession';
-import { DEFAULT_POS_CONFIG, type PosConfig, type Status } from '../../core/posTypes';
+import {
+  DEFAULT_POS_CONFIG,
+  DEFAULT_PLAYER_CONFIG,
+  normalizePlayerConfig,
+  type PosConfig,
+  type PlayerConfig,
+  type Status,
+} from '../../core/posTypes';
 import type { PosLocale } from '../../core/currency';
 
 export interface LogEntry {
@@ -27,12 +34,15 @@ export const PRICEBOOK: PricebookItem[] = [
 ];
 
 const idleStatus: Status = { vj: 'disconnected', pole: 'disconnected' };
+const PLAYER_CFG_KEY = 'r6ca.playerConfig';
 
 export function useEmulator(): {
   snapshot: SessionSnapshot;
   status: Status;
   config: PosConfig;
   setConfig: (c: PosConfig) => void;
+  playerConfig: PlayerConfig;
+  setPlayerConfig: (c: PlayerConfig) => void;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   log: LogEntry[];
@@ -55,8 +65,25 @@ export function useEmulator(): {
   const [snapshot, setSnapshot] = useState<SessionSnapshot>(() => session.snapshot());
   const [status, setStatus] = useState<Status>(idleStatus);
   const [config, setConfig] = useState<PosConfig>(DEFAULT_POS_CONFIG);
+  const [playerConfig, setPlayerConfigState] = useState<PlayerConfig>(() => {
+    try {
+      return normalizePlayerConfig(JSON.parse(localStorage.getItem(PLAYER_CFG_KEY) ?? 'null'));
+    } catch {
+      return DEFAULT_PLAYER_CONFIG;
+    }
+  });
   const [log, setLog] = useState<LogEntry[]>([]);
   const logId = useRef(0);
+
+  const setPlayerConfig = useCallback((c: PlayerConfig) => {
+    const normalized = normalizePlayerConfig(c);
+    setPlayerConfigState(normalized);
+    try {
+      localStorage.setItem(PLAYER_CFG_KEY, JSON.stringify(normalized));
+    } catch {
+      // ignore storage failures (private mode etc.)
+    }
+  }, []);
 
   useEffect(() => {
     const unsub = window.emulator.onStatus(setStatus);
@@ -106,6 +133,8 @@ export function useEmulator(): {
       status,
       config,
       setConfig,
+      playerConfig,
+      setPlayerConfig,
       connect,
       disconnect,
       log,
@@ -125,6 +154,6 @@ export function useEmulator(): {
       tender: (kind: TenderKind, amountCents?: number) => dispatch(session.tender(kind, amountCents)),
       voidTicket: () => dispatch(session.voidTicket()),
     }),
-    [snapshot, status, config, log, connect, disconnect, dispatch, setLocale, session],
+    [snapshot, status, config, playerConfig, setPlayerConfig, log, connect, disconnect, dispatch, setLocale, session],
   );
 }
