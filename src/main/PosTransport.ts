@@ -55,12 +55,16 @@ export class PosTransport {
     }
 
     this.setState(channel, 'connecting');
+    console.log(`[PosTransport] ${channel}: connecting to ${this.host}:${conn.port}…`);
     const socket = net.connect({ host: this.host, port: conn.port });
     conn.socket = socket;
 
-    socket.on('connect', () => this.setState(channel, 'connected'));
-    socket.on('error', () => {
-      /* 'close' follows; reconnect is scheduled there */
+    socket.on('connect', () => {
+      console.log(`[PosTransport] ${channel}: connected to ${this.host}:${conn.port}`);
+      this.setState(channel, 'connected');
+    });
+    socket.on('error', (err: Error) => {
+      console.warn(`[PosTransport] ${channel}: socket error — ${err.message}`);
     });
     socket.on('close', () => {
       conn.socket = null;
@@ -84,8 +88,10 @@ export class PosTransport {
     const conn = this.conns[channel];
     if (conn.socket && conn.state === 'connected') {
       conn.socket.write(data);
+      console.log(`[PosTransport] → ${channel}: ${JSON.stringify(data.replace(/\r\n$/, ''))}`);
       return true;
     }
+    console.warn(`[PosTransport] ✗ ${channel} not connected — dropped: ${JSON.stringify(data.replace(/\r\n$/, ''))}`);
     return false;
   }
 
@@ -100,6 +106,7 @@ export class PosTransport {
   private setState(channel: Channel, state: ConnState): void {
     if (this.conns[channel].state === state) return;
     this.conns[channel].state = state;
+    console.log(`[PosTransport] ${channel}: ${state}`);
     const snapshot = this.status();
     for (const l of this.statusListeners) l(snapshot);
   }

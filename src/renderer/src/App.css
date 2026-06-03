@@ -81,3 +81,5 @@ h3 { margin: 12px 0 6px; font-size: 13px; text-transform: uppercase; letter-spac
 .logline .tag { font-size: 9px; padding: 1px 4px; border-radius: 3px; flex-shrink: 0; }
 .logline.vj .tag { background: #2d6cdf; }
 .logline.pole .tag { background: #c45b3e; }
+.logline.sys .tag { background: #5a6270; }
+.logline.sys code { color: #aeb6c6; }

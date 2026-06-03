@@ -20,7 +20,7 @@ import type { GlobalInitConfig } from '../../core/globalInit';
 
 export interface LogEntry {
   id: number;
-  channel: WireMessage['channel'];
+  channel: WireMessage['channel'] | 'sys';
   text: string;
   at: string;
 }
@@ -90,6 +90,13 @@ export function useEmulator(): {
   const [log, setLog] = useState<LogEntry[]>([]);
   const logId = useRef(0);
 
+  const logSys = useCallback((text: string) => {
+    console.log(`[Emulator] ${text}`);
+    setLog((prev) =>
+      [{ id: logId.current++, channel: 'sys' as const, text, at: new Date().toLocaleTimeString() }, ...prev].slice(0, 300),
+    );
+  }, []);
+
   const [pricebookDir, setPricebookDirState] = useState<string>(
     () => localStorage.getItem(PRICEBOOK_DIR_KEY) ?? DEFAULT_PRICEBOOK_DIR,
   );
@@ -146,14 +153,16 @@ export function useEmulator(): {
   );
 
   const connect = useCallback(async () => {
+    logSys(`Connecting to ${config.host} (VJ ${config.vjPort}, pole ${config.polePort})…`);
     const s = await window.emulator.connect(config);
     setStatus(s);
-  }, [config]);
+  }, [config, logSys]);
 
   const disconnect = useCallback(async () => {
+    logSys('Disconnecting…');
     const s = await window.emulator.disconnect();
     setStatus(s);
-  }, []);
+  }, [logSys]);
 
   const setLocale = useCallback(
     (l: PosLocale) => {
@@ -164,27 +173,36 @@ export function useEmulator(): {
   );
 
   const loadPricebook = useCallback(async () => {
+    logSys(`Loading pricebook for "${playerConfig.playerCode}" from ${pricebookDir}…`);
     const result = await window.emulator.loadPricebook({ dir: pricebookDir, playerCode: playerConfig.playerCode });
     setPricebookStatus(result);
     setPricebookEntries(result.ok ? result.entries : []);
-  }, [pricebookDir, playerConfig.playerCode]);
+    logSys(
+      result.ok
+        ? `Pricebook loaded: ${result.count} items (${result.path.split('/').pop()})`
+        : `Pricebook error: ${result.error}`,
+    );
+  }, [pricebookDir, playerConfig.playerCode, logSys]);
 
   const [globalInit, setGlobalInit] = useState<GlobalInitConfig | null>(null);
   const [globalInitError, setGlobalInitError] = useState<string | null>(null);
 
   const registerPlayer = useCallback(async () => {
     setGlobalInitError(null);
+    logSys(`Registering player.key ${playerConfig.playerKey.slice(0, 8)}… across datacenters`);
     const res = await window.emulator.registerPlayer({ playerKey: playerConfig.playerKey });
     if (res.ok && res.config) {
       setGlobalInit(res.config);
       // Adopt the discovered player code so the rest of the app (pricebook,
       // tenant) lines up with the registered player.
       setPlayerConfig({ ...playerConfig, playerCode: res.config.playerCode });
+      logSys(`Registered: ${res.config.playerCode} (tenant ${res.config.tenant}) via ${res.config.datacenter}`);
     } else {
       setGlobalInit(null);
       setGlobalInitError(res.error ?? 'Registration failed');
+      logSys(`Register failed: ${res.error ?? 'unknown error'}`);
     }
-  }, [playerConfig, setPlayerConfig]);
+  }, [playerConfig, setPlayerConfig, logSys]);
 
   return useMemo(
     () => ({
