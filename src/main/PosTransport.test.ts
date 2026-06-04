@@ -6,6 +6,8 @@ interface TestServer {
   server: net.Server;
   port: number;
   received: () => string;
+  /** Write bytes back to every connected client (simulate the player injecting). */
+  push: (data: string) => void;
   /** Force-close the server AND any live client sockets (simulate player going away). */
   drop: () => Promise<void>;
 }
@@ -27,7 +29,10 @@ function listen(port = 0): Promise<TestServer> {
         for (const s of sockets) s.destroy();
         return new Promise<void>((r) => server.close(() => r()));
       };
-      resolve({ server, port: actualPort, received: () => buf, drop });
+      const push = (data: string): void => {
+        for (const s of sockets) s.write(data);
+      };
+      resolve({ server, port: actualPort, received: () => buf, push, drop });
     });
   });
 }
@@ -72,6 +77,48 @@ describe('PosTransport', () => {
 
     expect(vj.received()).toBe('EventId=1001,TerminalNumber=1\r\n');
     expect(pole.received()).toBe('Balance Due    $1.94');
+  });
+
+  it('parses an inbound inject command on the VJ channel and notifies onInject', async () => {
+    const vj = await listen();
+    const pole = await listen();
+    servers.push(vj.server, pole.server);
+
+    transport = new PosTransport({ host: '127.0.0.1', vjPort: vj.port, polePort: pole.port });
+    const injects: Array<{ barcode: string; quantity: number }> = [];
+    transport.onInject((cmd) => injects.push(cmd));
+    await transport.connect();
+    await wait(50);
+
+    // Player writes a completer inject back down the VJ socket (may arrive split).
+    vj.push('EventId=2001,Barcode=049000000443,Quantity=2\r\nEventId=2001,Barcode=123,Quantity=1\r\n');
+    await wait(50);
+
+    expect(injects).toEqual([
+      { barcode: '049000000443', quantity: 2 },
+      { barcode: '123', quantity: 1 },
+    ]);
+  });
+
+  it('for the bulloch register type connects pole only and never touches the VJ', async () => {
+    const vj = await listen();
+    const pole = await listen();
+    servers.push(vj.server, pole.server);
+
+    transport = new PosTransport({
+      host: '127.0.0.1',
+      vjPort: vj.port,
+      polePort: pole.port,
+      registerType: 'bulloch',
+    });
+    await transport.connect();
+    await wait(50);
+
+    // Pole is up; VJ is intentionally skipped even though a server is listening.
+    expect(transport.status()).toEqual({ vj: 'disconnected', pole: 'connected' });
+    expect(transport.send('vj', 'EventId=1001\r\n')).toBe(false);
+    await wait(20);
+    expect(vj.received()).toBe('');
   });
 
   it('auto-reconnects after the server drops and comes back', async () => {

@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { parsePricebook, buildPricebookIndex, loadPricebookIndex, resolvePricebookFilename, pickQuickKeys } from './pricebook';
+import {
+  parsePricebook,
+  buildPricebookIndex,
+  loadPricebookIndex,
+  resolvePricebookFilename,
+  resolvePricebookDir,
+  pickQuickKeys,
+} from './pricebook';
 
 const XML = `<?xml version="1.0" encoding="UTF-8"?>
 <OCT2000-IMPORT siteno="31989">
@@ -60,6 +67,42 @@ describe('resolvePricebookFilename', () => {
   it('returns null for no match or empty code', () => {
     expect(resolvePricebookFilename(files, '99999')).toBeNull();
     expect(resolvePricebookFilename(files, '')).toBeNull();
+  });
+
+  it('still prefers a code match over the first-xml fallback', () => {
+    expect(resolvePricebookFilename(files, '40000', { fallbackToFirst: true })).toBe('40000-1.xml');
+  });
+
+  it('falls back to the first .xml when no code matches and fallbackToFirst is set', () => {
+    expect(resolvePricebookFilename(['sample.xml', 'zzz.xml', 'notes.txt'], '99999', { fallbackToFirst: true })).toBe(
+      'sample.xml',
+    );
+  });
+
+  it('falls back to the first .xml with an empty code when fallbackToFirst is set', () => {
+    expect(resolvePricebookFilename(['sample.xml'], '', { fallbackToFirst: true })).toBe('sample.xml');
+  });
+
+  it('returns null with fallbackToFirst when there are no .xml files', () => {
+    expect(resolvePricebookFilename(['notes.txt'], '', { fallbackToFirst: true })).toBeNull();
+  });
+});
+
+describe('resolvePricebookDir', () => {
+  const fallback = '/bundled/pricebook';
+
+  it('uses the requested dir when it is non-empty', () => {
+    expect(resolvePricebookDir('/my/dir', fallback)).toBe('/my/dir');
+  });
+
+  it('falls back to the bundled dir when requested is empty, whitespace, or undefined', () => {
+    expect(resolvePricebookDir('', fallback)).toBe(fallback);
+    expect(resolvePricebookDir('   ', fallback)).toBe(fallback);
+    expect(resolvePricebookDir(undefined, fallback)).toBe(fallback);
+  });
+
+  it('trims a requested dir', () => {
+    expect(resolvePricebookDir('  /my/dir  ', fallback)).toBe('/my/dir');
   });
 });
 

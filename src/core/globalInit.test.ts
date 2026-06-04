@@ -6,6 +6,9 @@ import {
   extractEndpoints,
   toGlobalInitConfig,
   resolveTenantUrl,
+  findDatacenterName,
+  configFromPlayerKeyFile,
+  PLAYER_KEY_FILENAME,
 } from './globalInit';
 
 // Real generated config (the "# Generated on …" block), with Java-escaped colons.
@@ -63,6 +66,42 @@ describe('extractEndpoints / toGlobalInitConfig', () => {
 
   it('returns null when there is no player.code (unrecognised key)', () => {
     expect(toGlobalInitConfig('# nope\nfoo=bar')).toBeNull();
+  });
+});
+
+describe('findDatacenterName', () => {
+  it('recovers the datacenter name from an endpoint host', () => {
+    const endpoints = extractEndpoints(parseProperties(RAW));
+    expect(findDatacenterName(endpoints)).toBe('End to End Test Lab');
+  });
+
+  it('returns undefined for an unknown host', () => {
+    expect(findDatacenterName({ 'init.url': 'https://unknown.example.com/api' })).toBeUndefined();
+  });
+
+  it('returns undefined when there are no usable endpoints', () => {
+    expect(findDatacenterName({})).toBeUndefined();
+    expect(findDatacenterName({ 'init.url': '' })).toBeUndefined();
+  });
+});
+
+describe('configFromPlayerKeyFile', () => {
+  it('parses a persisted player.key file and recovers the datacenter', () => {
+    const cfg = configFromPlayerKeyFile(RAW)!;
+    expect(cfg.playerCode).toBe('ca-radmarketing-1');
+    expect(cfg.playerKey).toBe('d8362376-b40a-4f75-8757-4c5a2582b06e-e2e');
+    expect(cfg.tenant).toBe('ca');
+    expect(cfg.datacenter).toBe('End to End Test Lab');
+  });
+
+  it('returns null when the file has no player.code', () => {
+    expect(configFromPlayerKeyFile('# empty file')).toBeNull();
+  });
+});
+
+describe('PLAYER_KEY_FILENAME', () => {
+  it('matches the legacy player.key filename', () => {
+    expect(PLAYER_KEY_FILENAME).toBe('player.key');
   });
 });
 

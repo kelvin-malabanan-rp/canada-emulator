@@ -92,3 +92,83 @@ describe('RegisterSession', () => {
     expect(poleBalance.data.replace(/�/g, ' ')).toMatch(/Solde d.:/);
   });
 });
+
+function poleDatas(messages: WireMessage[]): string[] {
+  return messages.filter((m) => m.channel === 'pole').map((m) => m.data);
+}
+
+describe('RegisterSession — Bulloch (pole-only)', () => {
+  const bulloch = (): RegisterSession => new RegisterSession({ registerType: 'bulloch', taxRateBps: 0 });
+
+  it('never emits virtual-journal messages', () => {
+    const s = bulloch();
+    const all = [...s.addItem({ code: '1', description: 'A', priceCents: 100 }), ...s.tender('cash-exact')];
+    expect(all.some((m) => m.channel === 'vj')).toBe(false);
+  });
+
+  it('opens with [C000] NEWSALE LANG=EN and no VJ', () => {
+    const s = bulloch();
+    expect(poleDatas(s.open())).toEqual(['[C000] NEWSALE LANG=EN\n']);
+  });
+
+  it('uses LANG=FR when the locale is fr', () => {
+    const s = bulloch();
+    s.setLocale('fr');
+    expect(poleDatas(s.open())[0]).toBe('[C000] NEWSALE LANG=FR\n');
+  });
+
+  it('auto-opens then emits a [C110] item line with embedded running totals', () => {
+    const s = bulloch();
+    const datas = poleDatas(s.addItem({ code: '0000000002125', description: 'FROSTER SWIRL 350M', priceCents: 219 }));
+    expect(datas[0]).toBe('[C000] NEWSALE LANG=EN\n');
+    expect(datas[1]).toBe(
+      '[C110] 0000000002125 FROSTER SWIRL 350M QT=1 PR=2.19 AMT=2.19 STTL=2.19 DSC=0.00 TAX=0.00 TOTAL=2.19\n',
+    );
+  });
+
+  it('voidLine emits [C120] Undo Item with the line description', () => {
+    const s = bulloch();
+    s.addItem({ code: '1', description: 'HD CHEESE STICKS H', priceCents: 169 });
+    const datas = poleDatas(s.voidLine(1));
+    expect(datas[0]).toBe('[C120] Undo Item  HD CHEESE STICKS H STTL=0.00 DSC=0.00 TAX=0.00 TOTAL=0.00\n');
+  });
+
+  it('setQuantity emits a void then a re-add (legacy void+re-add parity)', () => {
+    const s = bulloch();
+    s.addItem({ code: '1', description: 'A', priceCents: 100 });
+    const datas = poleDatas(s.setQuantity(1, 3));
+    expect(datas[0].startsWith('[C120] Undo Item  A ')).toBe(true);
+    expect(datas[1]).toBe('[C110] 1 A QT=3 PR=1.00 AMT=3.00 STTL=3.00 DSC=0.00 TAX=0.00 TOTAL=3.00\n');
+  });
+
+  it('setPrice emits a void then a re-add at the new price', () => {
+    const s = bulloch();
+    s.addItem({ code: '1', description: 'A', priceCents: 100 });
+    const datas = poleDatas(s.setPrice(1, 250));
+    expect(datas[0].startsWith('[C120] Undo Item  A ')).toBe(true);
+    expect(datas[1]).toBe('[C110] 1 A QT=1 PR=2.50 AMT=2.50 STTL=2.50 DSC=0.00 TAX=0.00 TOTAL=2.50\n');
+  });
+
+  it('loyalty is a no-op for Bulloch (no VJ 1024 path)', () => {
+    const s = bulloch();
+    expect(s.loyalty('8018782603800034999992')).toEqual([]);
+  });
+
+  it('voidTicket emits [C121] CLEAR SALE and resets', () => {
+    const s = bulloch();
+    s.addItem({ code: '1', description: 'A', priceCents: 100 });
+    expect(poleDatas(s.voidTicket())).toContain('[C121] CLEAR SALE\n');
+    const snap = s.snapshot();
+    expect(snap.tx).toBe(2);
+    expect(snap.lines).toHaveLength(0);
+    expect(snap.started).toBe(false);
+  });
+
+  it('tender emits [C200] Sale with TRANS/TOTAL/CHNG/TAX and resets', () => {
+    const s = bulloch();
+    s.addItem({ code: '1', description: 'A', priceCents: 200 });
+    const datas = poleDatas(s.tender('amount', 500));
+    expect(datas).toContain('[C200] Sale TRANS=000001 TOTAL=2.00 CHNG=3.00 TAX=0.00\n');
+    expect(s.snapshot().tx).toBe(2);
+  });
+});

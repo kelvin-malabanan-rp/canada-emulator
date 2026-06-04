@@ -7,7 +7,8 @@
  * Node-only (uses `net`). Holds NO business logic — it ships bytes.
  */
 import net from 'net';
-import type { Channel, ConnState, Status, PosConfig } from '../core/posTypes';
+import type { Channel, ConnState, Status, PosConfig, RegisterType } from '../core/posTypes';
+import { parseInjectCommand, type InjectCommand } from '../core/injectProtocol';
 
 export type { Channel, ConnState, Status } from '../core/posTypes';
 
@@ -26,23 +27,33 @@ interface Connection {
 export class PosTransport {
   private readonly host: string;
   private readonly reconnectDelayMs: number;
+  private readonly registerType: RegisterType;
   private readonly conns: Record<Channel, Connection>;
   private closed = false;
   private statusListeners: Array<(s: Status) => void> = [];
+  private injectListeners: Array<(cmd: InjectCommand) => void> = [];
+  /** Line buffer for inbound VJ bytes (player→register completer injects). */
+  private vjBuffer = '';
 
   constructor(config: PosTransportConfig) {
     this.host = config.host;
     this.reconnectDelayMs = config.reconnectDelayMs ?? 2000;
+    this.registerType = config.registerType;
     this.conns = {
       vj: { socket: null, state: 'disconnected', port: config.vjPort, reconnectTimer: null },
       pole: { socket: null, state: 'disconnected', port: config.polePort, reconnectTimer: null },
     };
   }
 
-  /** Begin connecting both channels. Resolves once both attempts are initiated. */
+  /**
+   * Begin connecting the channels this register uses. Resolves once the
+   * attempts are initiated. Bulloch is pole-only (no virtual journal), so the
+   * VJ socket is never opened — avoids endless ECONNREFUSED retries against a
+   * port the Bulloch player doesn't listen on.
+   */
   async connect(): Promise<void> {
     this.closed = false;
-    this.openChannel('vj');
+    if (this.registerType !== 'bulloch') this.openChannel('vj');
     this.openChannel('pole');
   }
 
@@ -61,8 +72,13 @@ export class PosTransport {
 
     socket.on('connect', () => {
       console.log(`[PosTransport] ${channel}: connected to ${this.host}:${conn.port}`);
+      if (channel === 'vj') this.vjBuffer = '';
       this.setState(channel, 'connected');
     });
+    // The player writes completer injects back down the VJ socket.
+    if (channel === 'vj') {
+      socket.on('data', (data: Buffer) => this.handleVjData(data.toString('utf-8')));
+    }
     socket.on('error', (err: Error) => {
       console.warn(`[PosTransport] ${channel}: socket error — ${err.message}`);
     });
@@ -95,12 +111,32 @@ export class PosTransport {
     return false;
   }
 
+  /** Buffer inbound VJ bytes, split into lines, and emit any inject commands. */
+  private handleVjData(chunk: string): void {
+    this.vjBuffer += chunk;
+    let idx: number;
+    while ((idx = this.vjBuffer.indexOf('\n')) >= 0) {
+      const line = this.vjBuffer.slice(0, idx).replace(/\r$/, '');
+      this.vjBuffer = this.vjBuffer.slice(idx + 1);
+      const cmd = parseInjectCommand(line);
+      if (cmd) {
+        console.log(`[PosTransport] ← vj inject: ${JSON.stringify(cmd)}`);
+        for (const l of this.injectListeners) l(cmd);
+      }
+    }
+  }
+
   status(): Status {
     return { vj: this.conns.vj.state, pole: this.conns.pole.state };
   }
 
   onStatus(listener: (s: Status) => void): void {
     this.statusListeners.push(listener);
+  }
+
+  /** Subscribe to completer injects received from the player on the VJ socket. */
+  onInject(listener: (cmd: InjectCommand) => void): void {
+    this.injectListeners.push(listener);
   }
 
   private setState(channel: Channel, state: ConnState): void {
