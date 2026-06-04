@@ -1,14 +1,17 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'path';
-import { readdir, readFile } from 'fs/promises';
+import { existsSync } from 'fs';
+import { readdir, readFile, writeFile } from 'fs/promises';
 import { networkInterfaces } from 'os';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { PosTransport } from './PosTransport';
 import type { Channel, Status } from './PosTransport';
 import type { PosConfig } from '../core/posTypes';
-import { parsePricebook, resolvePricebookFilename } from '../core/pricebook';
+import { parsePricebook, resolvePricebookFilename, resolvePricebookDir } from '../core/pricebook';
 import type { PricebookLoadResult } from '../core/pricebook';
-import { DATACENTERS, toGlobalInitConfig } from '../core/globalInit';
+import { parseQuickKeys, orderQuickKeyFiles, resolveQuickKeyDir } from '../core/quickkeys';
+import type { QuickKeyFile, QuickKeyLoadResult } from '../core/quickkeys';
+import { DATACENTERS, toGlobalInitConfig, configFromPlayerKeyFile, PLAYER_KEY_FILENAME } from '../core/globalInit';
 import type { GlobalInitResult } from '../core/globalInit';
 
 /** First non-internal MAC address (matches the player's GlobalInit param). */
@@ -54,7 +57,41 @@ async function fetchDatacenterConfig(
   }
 }
 
+/**
+ * Absolute path of a folder under the repo's bundled `resources/`. Tries the
+ * candidates for dev (project root), packaged builds (resourcesPath), and the
+ * built main dir, returning the first that exists so the emulator is
+ * self-contained without an external liftck_player checkout.
+ */
+function bundledResourceDir(name: string): string {
+  const candidates = [
+    join(app.getAppPath(), 'resources', name),
+    join(process.resourcesPath, name),
+    join(__dirname, `../../resources/${name}`),
+  ];
+  return candidates.find((p) => existsSync(p)) ?? candidates[0];
+}
+
+const bundledQuickKeyDir = (): string => bundledResourceDir('quickkey');
+const bundledPricebookDir = (): string => bundledResourceDir('pricebook');
+
 let transport: PosTransport | null = null;
+
+/** Absolute path of the persisted generated config (the legacy `player.key` file). */
+function playerKeyFilePath(): string {
+  return join(app.getPath('userData'), PLAYER_KEY_FILENAME);
+}
+
+/** Persist the generated `# Generated on …` block, mirroring the legacy `writePlayerKeyFile`. */
+async function persistPlayerKeyFile(raw: string): Promise<void> {
+  const path = playerKeyFilePath();
+  try {
+    await writeFile(path, raw, 'utf-8');
+    console.log(`[GlobalInit] Wrote player.key file → ${path}`);
+  } catch (err) {
+    console.error(`[GlobalInit] Failed to write player.key file (${path}):`, err);
+  }
+}
 
 function registerEmulatorIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('emulator:connect', async (_evt, config: PosConfig) => {
@@ -62,6 +99,10 @@ function registerEmulatorIpc(getWindow: () => BrowserWindow | null): void {
     transport = new PosTransport(config);
     transport.onStatus((status: Status) => {
       getWindow()?.webContents.send('emulator:status-changed', status);
+    });
+    // Forward completer injects (player→register) to the renderer to ring up.
+    transport.onInject((cmd) => {
+      getWindow()?.webContents.send('emulator:inject', cmd);
     });
     await transport.connect();
     return transport.status();
@@ -85,12 +126,16 @@ function registerEmulatorIpc(getWindow: () => BrowserWindow | null): void {
   // Circle K names exports `<siteCode>-<timestamp>.xml`, so we pick the match.
   ipcMain.handle(
     'pricebook:load',
-    async (_evt, req: { dir: string; playerCode: string }): Promise<PricebookLoadResult> => {
-      const { dir, playerCode } = req;
-      console.log(`[Pricebook] Loading for player code "${playerCode}" from ${dir}`);
+    async (_evt, req: { dir?: string; playerCode: string }): Promise<PricebookLoadResult> => {
+      const { playerCode } = req;
+      // No external dir → use the bundled sample, picking the first .xml as a
+      // last resort since its name can't match an arbitrary player code.
+      const usingBundled = (req.dir ?? '').trim() === '';
+      const dir = resolvePricebookDir(req.dir, bundledPricebookDir());
+      console.log(`[Pricebook] Loading for player code "${playerCode}" from ${dir}${usingBundled ? ' (bundled)' : ''}`);
       try {
         const files = await readdir(dir);
-        const filename = resolvePricebookFilename(files, playerCode);
+        const filename = resolvePricebookFilename(files, playerCode, { fallbackToFirst: usingBundled });
         console.log(`[Pricebook]   matched file: ${filename ?? '(none)'}`);
         if (!filename) {
           return {
@@ -118,6 +163,28 @@ function registerEmulatorIpc(getWindow: () => BrowserWindow | null): void {
     },
   );
 
+  // Load every *.qk quick-key file from a folder (usualsuspects pinned first),
+  // mirroring the legacy emulator's quickkey/ directory scan. When no folder is
+  // requested, fall back to the .qk files bundled with this repo so the emulator
+  // works on a fresh clone without an external liftck_player checkout.
+  ipcMain.handle('quickkeys:load', async (_evt, req: { dir?: string }): Promise<QuickKeyLoadResult> => {
+    const dir = resolveQuickKeyDir(req.dir, bundledQuickKeyDir());
+    console.log(`[QuickKeys] Loading *.qk from ${dir}`);
+    try {
+      const names = orderQuickKeyFiles((await readdir(dir)).filter((n) => n.toLowerCase().endsWith('.qk')));
+      const files: QuickKeyFile[] = [];
+      for (const name of names) {
+        const text = await readFile(join(dir, name), 'utf-8');
+        const entries = parseQuickKeys(text);
+        console.log(`[QuickKeys]   ${name}: ${entries.length} keys`);
+        files.push({ file: name, entries });
+      }
+      return { ok: true, files, dir };
+    } catch (err) {
+      return { ok: false, files: [], dir, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
   // GlobalInit: send the player.key to each datacenter's services/init and
   // return the first generated config (player.code + tenant endpoint URLs).
   // Mirrors CKPlayer2.0 GlobalInitClient + the legacy Java player.
@@ -136,6 +203,8 @@ function registerEmulatorIpc(getWindow: () => BrowserWindow | null): void {
         for (const r of results) {
           if (r.status === 'fulfilled' && r.value) {
             console.log(`[GlobalInit] Done — registered as ${r.value.playerCode} on ${r.value.datacenter}`);
+            // Persist the generated config so endpoints survive a restart (legacy player.key file parity).
+            await persistPlayerKeyFile(r.value.raw);
             return { ok: true, config: r.value };
           }
         }
@@ -147,14 +216,37 @@ function registerEmulatorIpc(getWindow: () => BrowserWindow | null): void {
       }
     },
   );
+
+  // Load the persisted player.key file (if any) so the renderer can rehydrate
+  // the generated config + endpoints on startup without re-registering.
+  ipcMain.handle('globalinit:load', async (): Promise<GlobalInitResult> => {
+    const path = playerKeyFilePath();
+    try {
+      const raw = await readFile(path, 'utf-8');
+      const config = configFromPlayerKeyFile(raw);
+      if (!config) {
+        return { ok: false, error: 'player.key file present but has no player.code' };
+      }
+      console.log(`[GlobalInit] Loaded player.key file ← ${path} (player.code=${config.playerCode})`);
+      return { ok: true, config };
+    } catch (err) {
+      if (err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT') {
+        return { ok: false, error: 'No persisted player.key file yet' };
+      }
+      console.error(`[GlobalInit] Failed to read player.key file (${path}):`, err);
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
 }
 
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow(): void {
   const win = new BrowserWindow({
-    width: 1100,
-    height: 800,
+    width: 1320,
+    height: 1000,
+    minWidth: 1100,
+    minHeight: 820,
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
@@ -185,7 +277,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('io.rocketpartners.radiant6-canada-emulator');
+  electronApp.setAppUserModelId('io.rocketpartners.canada-emulator');
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window);

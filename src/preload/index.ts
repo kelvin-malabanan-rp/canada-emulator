@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { electronAPI } from '@electron-toolkit/preload';
 import type { Channel, PosConfig, Status, EmulatorBridge } from '../core/posTypes';
+import type { InjectCommand } from '../core/injectProtocol';
 
 /** The typed emulator bridge exposed to the renderer as `window.emulator`. */
 const emulator: EmulatorBridge = {
@@ -14,8 +15,15 @@ const emulator: EmulatorBridge = {
     ipcRenderer.on('emulator:status-changed', handler);
     return () => ipcRenderer.removeListener('emulator:status-changed', handler);
   },
-  loadPricebook: (req: { dir: string; playerCode: string }) => ipcRenderer.invoke('pricebook:load', req),
+  onInject: (cb: (cmd: InjectCommand) => void): (() => void) => {
+    const handler = (_evt: unknown, cmd: InjectCommand): void => cb(cmd);
+    ipcRenderer.on('emulator:inject', handler);
+    return () => ipcRenderer.removeListener('emulator:inject', handler);
+  },
+  loadPricebook: (req: { dir?: string; playerCode: string }) => ipcRenderer.invoke('pricebook:load', req),
   registerPlayer: (req: { playerKey: string; product?: string }) => ipcRenderer.invoke('globalinit:register', req),
+  loadPlayerKey: () => ipcRenderer.invoke('globalinit:load'),
+  loadQuickKeys: (req: { dir?: string }) => ipcRenderer.invoke('quickkeys:load', req),
 };
 
 if (process.contextIsolated) {

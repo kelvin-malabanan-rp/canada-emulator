@@ -6,6 +6,7 @@ import {
   normalizePlayerConfig,
   type PosConfig,
   type PlayerConfig,
+  type RegisterType,
   type Status,
 } from '../../core/posTypes';
 import type { PosLocale } from '../../core/currency';
@@ -17,6 +18,7 @@ import {
   type PricebookLoadResult,
 } from '../../core/pricebook';
 import type { GlobalInitConfig } from '../../core/globalInit';
+import { quickKeyColor, type QuickKeyColor, type QuickKeyEntry, type QuickKeyFile } from '../../core/quickkeys';
 
 export interface LogEntry {
   id: number;
@@ -40,8 +42,10 @@ export const PRICEBOOK: PricebookItem[] = [
 const idleStatus: Status = { vj: 'disconnected', pole: 'disconnected' };
 const PLAYER_CFG_KEY = 'r6ca.playerConfig';
 const PRICEBOOK_DIR_KEY = 'r6ca.pricebookDir';
-const DEFAULT_PRICEBOOK_DIR =
-  '/Users/dev.kelvin/Documents/Rocket Partners/LIFT/liftck_player/module-app-liftck-player/data/pricebook';
+// Empty = use the sample pricebook bundled with this repo (resolved in the main
+// process). Paste a folder to override (e.g. a local liftck_player checkout with
+// real `<playerCode>-<timestamp>.xml` exports).
+const DEFAULT_PRICEBOOK_DIR = '';
 
 export function useEmulator(): {
   snapshot: SessionSnapshot;
@@ -59,6 +63,9 @@ export function useEmulator(): {
   clearLog: () => void;
   setLocale: (l: PosLocale) => void;
   quickKeys: PricebookItem[];
+  quickKeyFiles: QuickKeyFile[];
+  quickKeyColorFor: (upc: string) => QuickKeyColor;
+  fireQuickKey: (entry: QuickKeyEntry) => void;
   pricebookDir: string;
   setPricebookDir: (dir: string) => void;
   pricebookStatus: PricebookLoadResult | null;
@@ -73,13 +80,24 @@ export function useEmulator(): {
   tender: (kind: TenderKind, amountCents?: number) => void;
   voidTicket: () => void;
 } {
-  const sessionRef = useRef<RegisterSession>(null as unknown as RegisterSession);
-  if (sessionRef.current === null) sessionRef.current = new RegisterSession();
+  const [config, setConfig] = useState<PosConfig>(DEFAULT_POS_CONFIG);
+
+  // One session per lane. Rebuilt when the register type changes so the wire
+  // protocol matches (Radiant6 Canada = VJ + pole, Bulloch = pole-only). The
+  // cashier/shopper locale carries across the switch.
+  const sessionRef = useRef<RegisterSession | null>(null);
+  const sessionTypeRef = useRef<RegisterType | undefined>(undefined);
+  if (sessionRef.current === null || sessionTypeRef.current !== config.registerType) {
+    const previous = sessionRef.current;
+    const next = new RegisterSession({ registerType: config.registerType });
+    if (previous) next.setLocale(previous.locale);
+    sessionRef.current = next;
+    sessionTypeRef.current = config.registerType;
+  }
   const session = sessionRef.current;
 
   const [snapshot, setSnapshot] = useState<SessionSnapshot>(() => session.snapshot());
   const [status, setStatus] = useState<Status>(idleStatus);
-  const [config, setConfig] = useState<PosConfig>(DEFAULT_POS_CONFIG);
   const [playerConfig, setPlayerConfigState] = useState<PlayerConfig>(() => {
     try {
       return normalizePlayerConfig(JSON.parse(localStorage.getItem(PLAYER_CFG_KEY) ?? 'null'));
@@ -89,6 +107,12 @@ export function useEmulator(): {
   });
   const [log, setLog] = useState<LogEntry[]>([]);
   const logId = useRef(0);
+
+  // When the register type switches the session is rebuilt (new wire protocol);
+  // reset the basket view to match the fresh, empty lane.
+  useEffect(() => {
+    setSnapshot(session.snapshot());
+  }, [session]);
 
   const logSys = useCallback((text: string) => {
     console.log(`[Emulator] ${text}`);
@@ -117,6 +141,41 @@ export function useEmulator(): {
     () => (pricebookEntries.length > 0 ? pickQuickKeys(pricebookEntries) : PRICEBOOK),
     [pricebookEntries],
   );
+
+  // Quick keys loaded from the bundled .qk files (legacy usualsuspects format).
+  const [quickKeyFiles, setQuickKeyFiles] = useState<QuickKeyFile[]>([]);
+  // Ad-trigger UPCs (for green keys) would require replicating CK Player 2.0's
+  // full content sync (manifest → ad → adTriggers → conditions → filters), so
+  // green is not sourced here — keys are grey (not in pricebook) or normal.
+  const adCodes = useMemo(() => new Set<string>(), []);
+
+  const pricebookCodes = useMemo(() => new Set(pricebookIndex.keys()), [pricebookIndex]);
+  const quickKeyColorFor = useCallback(
+    (upc: string): QuickKeyColor =>
+      quickKeyColor(upc, { pricebookLoaded: pricebookEntries.length > 0, pricebookCodes, adCodes }),
+    [pricebookCodes, pricebookEntries.length, adCodes],
+  );
+
+  const loadQuickKeys = useCallback(async () => {
+    logSys('Loading quick keys from bundled defaults…');
+    const res = await window.emulator.loadQuickKeys({});
+    if (res.ok) {
+      setQuickKeyFiles(res.files);
+      const total = res.files.reduce((n, f) => n + f.entries.length, 0);
+      logSys(`Quick keys loaded from ${res.dir}: ${res.files.length} file(s), ${total} keys`);
+    } else {
+      setQuickKeyFiles([]);
+      logSys(`Quick keys error: ${res.error}`);
+    }
+  }, [logSys]);
+
+  // Auto-load quick keys once on mount.
+  const quickKeysLoadedRef = useRef(false);
+  useEffect(() => {
+    if (quickKeysLoadedRef.current) return;
+    quickKeysLoadedRef.current = true;
+    void loadQuickKeys();
+  }, [loadQuickKeys]);
 
   const setPlayerConfig = useCallback((c: PlayerConfig) => {
     const normalized = normalizePlayerConfig(c);
@@ -152,6 +211,20 @@ export function useEmulator(): {
     [session],
   );
 
+  // Ring up completer injects pushed by the player over the VJ reverse channel:
+  // resolve the UPC (pricebook → quick keys → fallback) and add it to the basket,
+  // which emits the normal 1011 + pole back so the player's basket reflects it.
+  useEffect(() => {
+    return window.emulator.onInject((cmd) => {
+      const hit = pricebookIndex.get(cmd.barcode) ?? quickKeys.find((p) => p.code === cmd.barcode);
+      const item = hit
+        ? { code: hit.code, description: hit.description, priceCents: hit.priceCents, quantity: cmd.quantity }
+        : { code: cmd.barcode, description: `UPC ${cmd.barcode}`, priceCents: 100, quantity: cmd.quantity };
+      logSys(`Completer inject: ${cmd.barcode} ×${cmd.quantity} → ${item.description}`);
+      dispatch(session.addItem(item));
+    });
+  }, [pricebookIndex, quickKeys, session, dispatch, logSys]);
+
   const connect = useCallback(async () => {
     logSys(`Connecting to ${config.host} (VJ ${config.vjPort}, pole ${config.polePort})…`);
     const s = await window.emulator.connect(config);
@@ -173,7 +246,7 @@ export function useEmulator(): {
   );
 
   const loadPricebook = useCallback(async () => {
-    logSys(`Loading pricebook for "${playerConfig.playerCode}" from ${pricebookDir}…`);
+    logSys(`Loading pricebook for "${playerConfig.playerCode}" from ${pricebookDir || 'bundled sample'}…`);
     const result = await window.emulator.loadPricebook({ dir: pricebookDir, playerCode: playerConfig.playerCode });
     setPricebookStatus(result);
     setPricebookEntries(result.ok ? result.entries : []);
@@ -184,8 +257,37 @@ export function useEmulator(): {
     );
   }, [pricebookDir, playerConfig.playerCode, logSys]);
 
+  // Auto-load the pricebook once on mount so item descriptions/prices and
+  // quick-key colors resolve out-of-the-box from the bundled sample.
+  const pricebookLoadedRef = useRef(false);
+  useEffect(() => {
+    if (pricebookLoadedRef.current) return;
+    pricebookLoadedRef.current = true;
+    void loadPricebook();
+  }, [loadPricebook]);
+
   const [globalInit, setGlobalInit] = useState<GlobalInitConfig | null>(null);
   const [globalInitError, setGlobalInitError] = useState<string | null>(null);
+
+  // On startup, rehydrate from the persisted player.key file (if a prior
+  // registration saved one) so the generated config + endpoints survive a
+  // restart — parity with the legacy player reading its player.key file.
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (hydratedRef.current) return;
+    hydratedRef.current = true;
+    void window.emulator.loadPlayerKey().then((res) => {
+      if (res.ok && res.config) {
+        setGlobalInit(res.config);
+        setPlayerConfig({
+          ...playerConfig,
+          playerCode: res.config.playerCode,
+          playerKey: res.config.playerKey || playerConfig.playerKey,
+        });
+        logSys(`Loaded persisted player.key: ${res.config.playerCode} (tenant ${res.config.tenant})`);
+      }
+    });
+  }, [playerConfig, setPlayerConfig, logSys]);
 
   const registerPlayer = useCallback(async () => {
     setGlobalInitError(null);
@@ -221,6 +323,17 @@ export function useEmulator(): {
       clearLog: () => setLog([]),
       setLocale,
       quickKeys,
+      quickKeyFiles,
+      quickKeyColorFor,
+      fireQuickKey: (entry: QuickKeyEntry) =>
+        dispatch(
+          session.addItem({
+            code: entry.upc,
+            description: entry.description,
+            priceCents: entry.priceCents,
+            quantity: entry.quantity,
+          }),
+        ),
       pricebookDir,
       setPricebookDir,
       pricebookStatus,
@@ -258,6 +371,8 @@ export function useEmulator(): {
       setLocale,
       session,
       quickKeys,
+      quickKeyFiles,
+      quickKeyColorFor,
       pricebookDir,
       setPricebookDir,
       pricebookStatus,

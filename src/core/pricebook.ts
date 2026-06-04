@@ -98,19 +98,44 @@ export function loadPricebookIndex(xml: string): Map<string, ResolvedItem> {
 }
 
 /**
+ * Pick which folder to read pricebook XML from. A non-empty `requested`
+ * directory (the UI override) wins; otherwise fall back to the bundled sample
+ * so the emulator resolves items, prices, and quick-key colors on a fresh clone
+ * without an external pricebook export.
+ */
+export function resolvePricebookDir(requested: string | undefined, fallback: string): string {
+  const trimmed = (requested ?? '').trim();
+  return trimmed !== '' ? trimmed : fallback;
+}
+
+/**
  * Pick the pricebook file that corresponds to a player/site code. Circle K
  * names pricebook exports `<siteCode>-<timestamp>.xml` (e.g.
  * `31989-1706723713125.xml`), so the emulator loads the one matching the
  * Player Code in use. Prefers the most recent (lexicographically last) match;
  * falls back to an exact `<code>.xml`.
+ *
+ * When `fallbackToFirst` is set (bundled-sample mode, where the file name can't
+ * match an arbitrary player code), the first `.xml` is returned as a last resort
+ * — including when no player code is set yet.
  */
-export function resolvePricebookFilename(files: string[], playerCode: string): string | null {
+export function resolvePricebookFilename(
+  files: string[],
+  playerCode: string,
+  opts: { fallbackToFirst?: boolean } = {},
+): string | null {
   const code = playerCode.trim();
-  if (!code) return null;
-  const matches = files.filter((f) => new RegExp(`^${code}-.*\\.xml$`, 'i').test(f)).sort();
-  if (matches.length > 0) return matches[matches.length - 1];
-  const exact = files.find((f) => f.toLowerCase() === `${code.toLowerCase()}.xml`);
-  return exact ?? null;
+  if (code) {
+    const matches = files.filter((f) => new RegExp(`^${code}-.*\\.xml$`, 'i').test(f)).sort();
+    if (matches.length > 0) return matches[matches.length - 1];
+    const exact = files.find((f) => f.toLowerCase() === `${code.toLowerCase()}.xml`);
+    if (exact) return exact;
+  }
+  if (opts.fallbackToFirst) {
+    const xmls = files.filter((f) => f.toLowerCase().endsWith('.xml')).sort();
+    if (xmls.length > 0) return xmls[0];
+  }
+  return null;
 }
 
 /** Select sellable items (barcode + description + price) to surface as quick keys. */

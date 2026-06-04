@@ -1,12 +1,87 @@
-import { useState } from 'react';
-import { useEmulator, PRICEBOOK } from './useEmulator';
-import { formatCurrency } from '../../core/currency';
-import type { ConnState } from '../../core/posTypes';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEmulator } from './useEmulator';
+import { formatCurrency, type PosLocale } from '../../core/currency';
+import { paginate } from '../../core/quickkeys';
+import { REGISTER_TYPES, portsForRegisterType, type ConnState, type RegisterType } from '../../core/posTypes';
 import './App.css';
+
+const QK_COLS = 3;
+const QK_ROW_STRIDE = 72; // key height (64) + grid gap (8)
 
 function Dot({ state }: { state: ConnState }): JSX.Element {
   const color = state === 'connected' ? '#3ec46d' : state === 'connecting' ? '#e6b450' : '#d9534f';
   return <span className="dot" style={{ background: color }} title={state} />;
+}
+
+/** Quick keys driven by .qk files: 3-wide grid that fills the column, paginated, colored. */
+function QuickKeys({ e, locale }: { e: ReturnType<typeof useEmulator>; locale: PosLocale }): JSX.Element {
+  const [tab, setTab] = useState(0);
+  const [page, setPage] = useState(0);
+  const [perPage, setPerPage] = useState(9);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const files = e.quickKeyFiles;
+  const active = files[Math.min(tab, Math.max(0, files.length - 1))];
+  const pages = useMemo(() => paginate(active?.entries ?? [], perPage), [active, perPage]);
+  const safePage = Math.min(page, pages.length - 1);
+  const current = pages[safePage] ?? [];
+
+  useEffect(() => setPage(0), [tab]);
+
+  // Fill the available column height: compute how many 3-wide rows fit. Re-runs
+  // when the grid mounts (quick keys load async, so the grid isn't in the DOM on
+  // first render) and whenever the active file changes.
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const recompute = (): void => {
+      const rows = Math.max(1, Math.floor((el.clientHeight + 8) / QK_ROW_STRIDE));
+      setPerPage(rows * QK_COLS);
+    };
+    recompute();
+    const ro = new ResizeObserver(recompute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [active]);
+
+  return (
+    <div className="qk">
+      {files.length > 1 && (
+        <div className="qktabs">
+          {files.map((f, i) => (
+            <button key={f.file} className={i === tab ? 'on' : ''} onClick={() => setTab(i)}>
+              {f.file.replace(/\.qk$/i, '')}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="grid qk3" ref={gridRef}>
+        {current.map((entry, i) => (
+          <button
+            key={`${entry.upc}-${i}`}
+            className={`key ${e.quickKeyColorFor(entry.upc)}`}
+            title={entry.upc}
+            onClick={() => e.fireQuickKey(entry)}
+          >
+            <span>{entry.description}</span>
+            <small>{formatCurrency(entry.priceCents, locale)}</small>
+          </button>
+        ))}
+      </div>
+      {pages.length > 1 && (
+        <div className="qkpager">
+          <button disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>
+            ‹
+          </button>
+          <span>
+            {safePage + 1}/{pages.length}
+          </span>
+          <button disabled={safePage >= pages.length - 1} onClick={() => setPage(safePage + 1)}>
+            ›
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function App(): JSX.Element {
@@ -15,14 +90,11 @@ function App(): JSX.Element {
   const locale = snapshot.locale;
   const [scanCode, setScanCode] = useState('');
   const [card, setCard] = useState('8018782603800034999992');
-  const [trigUpc, setTrigUpc] = useState('049000000443');
-  const [trigQty, setTrigQty] = useState(1);
-  const [trigPrice, setTrigPrice] = useState('2.29');
 
   return (
     <div className="app">
       <header className="bar">
-        <strong>Radiant6 Canada Emulator</strong>
+        <strong>Canada Emulator</strong>
         <span className="conn">
           <Dot state={e.status.vj} /> VJ {e.config.host}:{e.config.vjPort}
           <Dot state={e.status.pole} /> Pole {e.config.host}:{e.config.polePort}
@@ -32,18 +104,21 @@ function App(): JSX.Element {
           value={e.config.host}
           onChange={(ev) => e.setConfig({ ...e.config, host: ev.target.value })}
         />
-        <input
-          className="port"
-          type="number"
-          value={e.config.vjPort}
-          onChange={(ev) => e.setConfig({ ...e.config, vjPort: Number(ev.target.value) })}
-        />
-        <input
-          className="port"
-          type="number"
-          value={e.config.polePort}
-          onChange={(ev) => e.setConfig({ ...e.config, polePort: Number(ev.target.value) })}
-        />
+        <select
+          className="regtype"
+          value={e.config.registerType}
+          title="Register type — sets the VJ/pole ports automatically"
+          onChange={(ev) => {
+            const registerType = ev.target.value as RegisterType;
+            e.setConfig({ ...e.config, registerType, ...portsForRegisterType(registerType) });
+          }}
+        >
+          {REGISTER_TYPES.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.label} (VJ {r.vjPort} / Pole {r.polePort})
+            </option>
+          ))}
+        </select>
         <button onClick={() => void e.connect()}>Connect</button>
         <button onClick={() => void e.disconnect()}>Disconnect</button>
         <span className="spacer" />
@@ -63,8 +138,8 @@ function App(): JSX.Element {
         />
         <span className="lbl">Player Key</span>
         <input
-          className="host"
-          type="password"
+          className="pkey"
+          type="text"
           value={e.playerConfig.playerKey}
           placeholder="player.key"
           onChange={(ev) => e.setPlayerConfig({ ...e.playerConfig, playerKey: ev.target.value })}
@@ -100,14 +175,7 @@ function App(): JSX.Element {
       <div className="body">
         <section className="left">
           <h3>Quick Keys</h3>
-          <div className="grid">
-            {PRICEBOOK.map((p) => (
-              <button key={p.code} className="key" onClick={() => e.addItem(p)}>
-                <span>{p.description}</span>
-                <small>{formatCurrency(p.priceCents, locale)}</small>
-              </button>
-            ))}
-          </div>
+          <QuickKeys e={e} locale={locale} />
 
           <h3>Scan</h3>
           <form
@@ -127,40 +195,6 @@ function App(): JSX.Element {
             <input value={card} onChange={(ev) => setCard(ev.target.value)} placeholder="loyalty # or 12-digit UPC" />
             <button onClick={() => e.loyalty(card.trim())}>Scan Card</button>
           </div>
-
-          <h3>Ad Triggers</h3>
-          <p className="hint">
-            Fires <code>ITEM_ADDED</code> — drives <code>itemsInBasket</code>, <code>itemsNotInBasket</code>,{' '}
-            <code>nthItemScanned</code>, <code>basket</code>. Set the UPC/qty to whatever your loaded CA ad set targets.
-          </p>
-          <div className="row">
-            <input value={trigUpc} onChange={(ev) => setTrigUpc(ev.target.value)} placeholder="trigger UPC" />
-            <input
-              className="qty"
-              type="number"
-              min={1}
-              value={trigQty}
-              onChange={(ev) => setTrigQty(Math.max(1, Number(ev.target.value)))}
-            />
-            <input className="qty" value={trigPrice} onChange={(ev) => setTrigPrice(ev.target.value)} placeholder="$" />
-            <button
-              onClick={() =>
-                e.addCustom({
-                  code: trigUpc.trim(),
-                  description: `Trigger ${trigUpc.trim()}`,
-                  priceCents: Math.round((parseFloat(trigPrice) || 0) * 100),
-                  quantity: trigQty,
-                })
-              }
-            >
-              Fire Item
-            </button>
-          </div>
-          <p className="hint">
-            <code>ifLoyaltySignedIn</code> uses the loyalty button above (note: the CA 1024 event needs the Epic-6
-            discriminator to reach the basket). <code>onPromo</code> / <code>totalPrice</code> depend on CKPlayer2.0's
-            loaded pricebook/promos, not the emulator.
-          </p>
         </section>
 
         <section className="center">

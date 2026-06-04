@@ -124,3 +124,41 @@ export function toGlobalInitConfig(raw: string, datacenter?: string): GlobalInit
 export function resolveTenantUrl(url: string, tenant: string): string {
   return url.replace(/\{tenantCode\}/g, tenant).replace(/%7BtenantCode%7D/gi, tenant);
 }
+
+/**
+ * Filename for the persisted generated config, matching the legacy player's
+ * `player.key` file (`EmulatorUI.PLAYER_KEY_FILENAME`). The `# Generated on …`
+ * properties block is written here so endpoints survive an app restart.
+ */
+export const PLAYER_KEY_FILENAME = 'player.key';
+
+/**
+ * Recover a datacenter display name from a set of endpoint URLs by matching
+ * their origin against the known {@link DATACENTERS}. The persisted file holds
+ * only properties (no datacenter name), so this restores it on reload.
+ */
+export function findDatacenterName(endpoints: Record<string, string>): string | undefined {
+  for (const url of Object.values(endpoints)) {
+    if (!url) continue;
+    let origin: string;
+    try {
+      origin = new URL(url).origin;
+    } catch {
+      continue;
+    }
+    const dc = DATACENTERS.find((d) => d.host === origin);
+    if (dc) return dc.name;
+  }
+  return undefined;
+}
+
+/**
+ * Parse a persisted `player.key` file back into a GlobalInitConfig, recovering
+ * the datacenter name from the endpoint hosts. Returns null when the file holds
+ * no `player.code`.
+ */
+export function configFromPlayerKeyFile(text: string): GlobalInitConfig | null {
+  const config = toGlobalInitConfig(text);
+  if (!config) return null;
+  return { ...config, datacenter: findDatacenterName(config.endpoints) };
+}
