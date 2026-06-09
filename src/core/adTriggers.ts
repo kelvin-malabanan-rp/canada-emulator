@@ -24,6 +24,8 @@ export interface AdItem {
 export interface AdTriggersCompleters {
   id: string;
   name: string;
+  /** Backend template name (e.g. 'Static Image Or Video', 'Basket Offer'). */
+  template: string;
   triggers: AdItem[];
   completers: AdItem[];
 }
@@ -46,6 +48,7 @@ interface RawGroup {
 export interface RawAdConfig {
   id?: number | string;
   name?: string;
+  templatename?: string;
   adtriggers?: RawGroup[];
   adcompleters?: RawGroup[];
 }
@@ -137,9 +140,21 @@ export function extractTriggersCompleters(ad: RawAdConfig): AdTriggersCompleters
   return {
     id: str(ad.id),
     name: str(ad.name) || str(ad.id) || '(unnamed ad)',
+    template: str(ad.templatename),
     triggers: dedupeByCode(triggers),
     completers: dedupeByCode(completers),
   };
+}
+
+/**
+ * Whether a template renders interactive figs (microsite) rather than a plain
+ * image/video. 'Static Image Or Video' is the non-interactive walkup template;
+ * everything else (Basket Offer, Combo, 2 Or 3 For, Discount Club, Sweeps,
+ * Punch Card, Generic, …) is an interactive microsite. Unknown/empty → false.
+ */
+export function isInteractiveTemplate(template: string | undefined): boolean {
+  const t = (template ?? '').trim().toLowerCase();
+  return t !== '' && t !== 'static image or video';
 }
 
 /** Order ads by name (case-insensitive), matching the legacy emulator list. */
