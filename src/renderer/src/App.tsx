@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useEmulator } from './useEmulator';
 import { formatCurrency, type PosLocale } from '../../core/currency';
 import { paginate } from '../../core/quickkeys';
-import type { AdItem } from '../../core/adTriggers';
+import { isInteractiveTemplate, type AdItem } from '../../core/adTriggers';
 import { REGISTER_TYPES, portsForRegisterType, type ConnState, type RegisterType } from '../../core/posTypes';
 import './App.css';
 
@@ -109,6 +109,8 @@ function TriggersCompleters({ e }: { e: ReturnType<typeof useEmulator> }): JSX.E
     const detail = e.adDetails[ad.id] ?? (await e.loadAdDetail(ad.id));
     setBusy(null);
     const items = !detail ? [] : kind === 'triggers' ? detail.triggers : detail.completers;
+    // No completer modal for an ad with no completers.
+    if (kind === 'completers' && items.length === 0) return;
     setModal({ ad, kind, items });
   };
 
@@ -119,8 +121,12 @@ function TriggersCompleters({ e }: { e: ReturnType<typeof useEmulator> }): JSX.E
     if (!modal) return;
     e.scan(it.code, it.description);
     if (modal.kind === 'triggers') {
-      // Trigger fired → close this modal and open the ad's completers.
+      // Trigger fired → open the ad's completers, or just close if it has none.
       const completers = e.adDetails[modal.ad.id]?.completers ?? [];
+      if (completers.length === 0) {
+        setModal(null);
+        return;
+      }
       setModal({ ad: modal.ad, kind: 'completers', items: completers });
     } else {
       // Completer selected → close the modal.
@@ -148,18 +154,32 @@ function TriggersCompleters({ e }: { e: ReturnType<typeof useEmulator> }): JSX.E
           <div className="tclist">
             {current.map((ad) => {
               const cs = completerState(ad.id);
+              const template = adDetails[ad.id]?.template ?? '';
+              const interactive = isInteractiveTemplate(template);
               return (
-                <div key={ad.id || ad.name} className="tcrow">
+                <div key={ad.id || ad.name} className={`tcrow${interactive ? ' interactive' : ''}`}>
                   <span
                     className={`tcdot ${cs}`}
                     title={cs === 'has' ? 'Has completers' : cs === 'none' ? 'No completers' : 'Checking…'}
                   />
-                  <span className="tcname" title={ad.name}>{ad.name}</span>
+                  <div className="tcnamewrap">
+                    <span className="tcname" title={ad.name}>{ad.name}</span>
+                    {template && (
+                      <span className="tctmpl" title={interactive ? 'Interactive microsite ad (has figs)' : 'Plain image/video ad'}>
+                        {template}
+                      </span>
+                    )}
+                  </div>
                   <button className="tcbtn" disabled={busy !== null} onClick={() => void open(ad, 'triggers')}>
                     {busy === `${ad.id}:triggers` ? '…' : 'Triggers'}
                   </button>
-                  <button className="tcbtn" disabled={busy !== null} onClick={() => void open(ad, 'completers')}>
-                    {busy === `${ad.id}:completers` ? '…' : 'Compl.'}
+                  <button
+                    className="tcbtn"
+                    disabled={busy !== null || cs === 'none'}
+                    title={cs === 'none' ? 'No completers' : undefined}
+                    onClick={() => void open(ad, 'completers')}
+                  >
+                    {busy === `${ad.id}:completers` ? '…' : 'Completers'}
                   </button>
                 </div>
               );

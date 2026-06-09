@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { extractTriggersCompleters, orderAds, type AdTriggersCompleters } from './adTriggers';
+import {
+  extractTriggersCompleters,
+  orderAds,
+  isInteractiveTemplate,
+  type AdTriggersCompleters,
+} from './adTriggers';
 
 describe('extractTriggersCompleters', () => {
   it('pulls trigger UPCs from adtriggerconditions[].items (string UPCs)', () => {
@@ -62,6 +67,26 @@ describe('extractTriggersCompleters', () => {
     const r = extractTriggersCompleters({ id: 1, name: 'Plain' });
     expect(r.triggers).toEqual([]);
     expect(r.completers).toEqual([]);
+  });
+
+  it('surfaces the template name', () => {
+    expect(extractTriggersCompleters({ id: 1, name: 'X', templatename: 'Basket Offer' }).template).toBe('Basket Offer');
+    expect(extractTriggersCompleters({ id: 2, name: 'Y' }).template).toBe('');
+  });
+});
+
+describe('isInteractiveTemplate', () => {
+  it('is false for Static Image Or Video and empty/unknown', () => {
+    expect(isInteractiveTemplate('Static Image Or Video')).toBe(false);
+    expect(isInteractiveTemplate('static image or video')).toBe(false);
+    expect(isInteractiveTemplate('')).toBe(false);
+    expect(isInteractiveTemplate(undefined)).toBe(false);
+  });
+
+  it('is true for microsite templates', () => {
+    expect(isInteractiveTemplate('Basket Offer')).toBe(true);
+    expect(isInteractiveTemplate('2 Or 3 For')).toBe(true);
+    expect(isInteractiveTemplate('Combo')).toBe(true);
   });
 });
 
