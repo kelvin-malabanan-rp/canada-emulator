@@ -55,7 +55,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
 h3 { margin: 9px 0 5px; font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: #8b93a3; }
 
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.grid.qk3 { grid-template-columns: 1fr 1fr 1fr; grid-auto-rows: 64px; align-content: start; flex: 0 0 auto; min-height: 0; }
+/* Reserve a fixed 3-row height (3×64px + 2×8px gap) so a short last page
+   doesn't shrink the grid and shift the ads section up. */
+.grid.qk3 { grid-template-columns: 1fr 1fr 1fr; grid-auto-rows: 64px; align-content: start; flex: 0 0 auto; min-height: 208px; }
 .key { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; justify-content: space-between; background: #2a2e37; border: 1px solid #363b45; border-radius: 6px; padding: 8px; color: #e7e9ee; cursor: pointer; height: 64px; overflow: hidden; text-align: left; }
 .key:hover { border-color: #2d6cdf; }
 .key small { color: #9aa; flex-shrink: 0; }
