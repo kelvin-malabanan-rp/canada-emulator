@@ -55,6 +55,7 @@ const DEFAULT_PRICEBOOK_DIR = '';
 
 export function useEmulator(): {
   snapshot: SessionSnapshot;
+  injectSeq: number;
   status: Status;
   config: PosConfig;
   setConfig: (c: PosConfig) => void;
@@ -109,6 +110,8 @@ export function useEmulator(): {
 
   const [snapshot, setSnapshot] = useState<SessionSnapshot>(() => session.snapshot());
   const [status, setStatus] = useState<Status>(idleStatus);
+  // Increments on each completer inject from the player (CKP2 completing/adding).
+  const [injectSeq, setInjectSeq] = useState(0);
   const [playerConfig, setPlayerConfigState] = useState<PlayerConfig>(() => {
     try {
       return normalizePlayerConfig(JSON.parse(localStorage.getItem(PLAYER_CFG_KEY) ?? 'null'));
@@ -205,26 +208,51 @@ export function useEmulator(): {
     return ep['manifest.url'] || ep['contentCron.baseUrl'] || ep['init.url'] || ep['heartbeat.url'] || playerConfig.backendBaseUrl;
   }, [globalInit, playerConfig.backendBaseUrl]);
 
+  const adsRunRef = useRef(0);
   const loadAds = useCallback(async () => {
+    const run = ++adsRunRef.current; // invalidates any in-flight prefetch
     setAdsStatus({ loading: true, error: null });
     logSys(`Loading ads for "${playerConfig.playerCode}" from ${resolvedBackendUrl}…`);
+    const req = {
+      backendBaseUrl: resolvedBackendUrl,
+      playerCode: playerConfig.playerCode,
+      playerKey: playerConfig.playerKey,
+    };
     try {
-      const req = {
-        backendBaseUrl: resolvedBackendUrl,
-        playerCode: playerConfig.playerCode,
-        playerKey: playerConfig.playerKey,
-      };
       const res = await window.emulator.loadAds(req);
-      if (res.ok) {
-        setAdManifest(orderManifest(res.ads));
-        setAdDetails({});
-        setAdsStatus({ loading: false, error: null });
-        logSys(`Ads loaded: ${res.ads.length} ad(s)`);
-      } else {
+      if (!res.ok) {
         setAdManifest([]);
         setAdsStatus({ loading: false, error: res.error ?? 'unknown error' });
         logSys(`Ads error: ${res.error}`);
+        return;
       }
+      const manifest = orderManifest(res.ads);
+      setAdManifest(manifest);
+      setAdDetails({});
+      setAdsStatus({ loading: false, error: null });
+      logSys(`Ads loaded: ${manifest.length} ad(s) — fetching details…`);
+
+      // Background-prefetch every ad's triggers/completers (throttled), so the
+      // completer dots + template labels fill in without per-page waits.
+      const ids = manifest.map((m) => m.id);
+      let next = 0;
+      const worker = async (): Promise<void> => {
+        while (next < ids.length && adsRunRef.current === run) {
+          const id = ids[next++];
+          try {
+            const r = await window.emulator.loadAdDetail({ ...req, id });
+            if (adsRunRef.current !== run) return;
+            if (r.ok && r.ad) {
+              const detail = extractTriggersCompleters(r.ad);
+              setAdDetails((prev) => (prev[id] ? prev : { ...prev, [id]: detail }));
+            }
+          } catch {
+            // ignore individual ad failures — others still load
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: 5 }, () => worker()));
+      if (adsRunRef.current === run) logSys(`Ad details loaded (${manifest.length})`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setAdsStatus({ loading: false, error: msg });
@@ -304,6 +332,8 @@ export function useEmulator(): {
   // Ring up completer injects pushed by the player over the VJ reverse channel:
   // resolve the UPC (pricebook → quick keys → fallback) and add it to the basket,
   // which emits the normal 1011 + pole back so the player's basket reflects it.
+  // Each inject bumps injectSeq — the player completing/adding a completer is the
+  // signal to close the emulator's now-stale completer modal.
   useEffect(() => {
     return window.emulator.onInject((cmd) => {
       const hit = pricebookIndex.get(cmd.barcode) ?? quickKeys.find((p) => p.code === cmd.barcode);
@@ -312,6 +342,7 @@ export function useEmulator(): {
         : { code: cmd.barcode, description: `UPC ${cmd.barcode}`, priceCents: 100, quantity: cmd.quantity };
       logSys(`Completer inject: ${cmd.barcode} ×${cmd.quantity} → ${item.description}`);
       dispatch(session.addItem(item));
+      setInjectSeq((n) => n + 1);
     });
   }, [pricebookIndex, quickKeys, session, dispatch, logSys]);
 
@@ -396,6 +427,7 @@ export function useEmulator(): {
   return useMemo(
     () => ({
       snapshot,
+      injectSeq,
       status,
       config,
       setConfig,
@@ -452,6 +484,7 @@ export function useEmulator(): {
     }),
     [
       snapshot,
+      injectSeq,
       status,
       config,
       playerConfig,

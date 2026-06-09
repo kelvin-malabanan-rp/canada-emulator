@@ -50,7 +50,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
 /* Quick Keys is a compact 3×3 block; Triggers & Completers takes the rest,
    sitting right below the quick-keys pager. */
 .left > .qk { flex: 0 0 auto; }
-.left > .tc { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.left > .tc { flex: 1 1 auto; min-height: 0; overflow: hidden; }
 .right { border-left: 1px solid #2f333c; background: #16181d; }
 h3 { margin: 9px 0 5px; font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: #8b93a3; }
 
@@ -80,12 +80,15 @@ h3 { margin: 9px 0 5px; font-size: 13px; text-transform: uppercase; letter-spaci
 .tcctl button { background: #2d6cdf; color: #fff; border: 0; border-radius: 4px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
 .tcctl button:disabled { opacity: .5; cursor: default; }
 .tcerr { color: #e2777f; font-size: 11px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tclist { display: flex; flex-direction: column; gap: 6px; }
-.tcrow { display: flex; align-items: center; gap: 8px; background: #20242b; border: 1px solid #2a2e37; border-radius: 6px; padding: 8px 10px; }
+/* Only the list scrolls (if ever); the Load-ads bar and pager stay pinned. */
+.tclist { display: flex; flex-direction: column; gap: 5px; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.tcrow { display: flex; align-items: center; gap: 8px; background: #20242b; border: 1px solid #2a2e37; border-radius: 6px; padding: 6px 10px; }
 .tcnamewrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .tcname { min-width: 0; font-size: 13px; color: #d8dbe2; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
 .tctmpl { min-width: 0; font-size: 10px; color: #7e8696; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tcrow.interactive { border-left: 3px solid #3a78ea; }
+.tclegend { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.tcaccentbar { display: inline-block; width: 3px; height: 11px; border-radius: 2px; background: #3a78ea; vertical-align: middle; }
 .tcdot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; vertical-align: middle; }
 .tcdot.has { background: #3ec46d; }
 .tcdot.none { background: #4a4f5a; }

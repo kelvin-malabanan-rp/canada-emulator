@@ -80,22 +80,23 @@ function TriggersCompleters({ e }: { e: ReturnType<typeof useEmulator> }): JSX.E
     items: AdItem[];
   } | null>(null);
   const [busy, setBusy] = useState<string | null>(null); // "<id>:triggers" | "<id>:completers"
-  const perPage = 5;
+  const perPage = 4;
   const ads = e.adManifest;
   const pageCount = Math.max(1, Math.ceil(ads.length / perPage));
   const safePage = Math.min(page, pageCount - 1);
   const current = ads.slice(safePage * perPage, safePage * perPage + perPage);
 
-  // Prefetch the visible page's details so each row can show whether it has a
-  // completer (only the 4 shown — keeps the lazy/fast behaviour).
-  const visibleIds = current.map((a) => a.id).join(',');
-  const { loadAdDetail, adDetails } = e;
+  // Details are background-prefetched by loadAds; read them here for indicators.
+  const adDetails = e.adDetails;
+  const loadedCount = Object.keys(adDetails).length;
+
+  // Close the modal once CKP2 acts on the offer: a completer inject from the
+  // player, or the transaction ending/resetting (tx advances on tender/void).
+  const { tx } = e.snapshot;
+  const injectSeq = e.injectSeq;
   useEffect(() => {
-    current.forEach((ad) => {
-      if (!adDetails[ad.id]) void loadAdDetail(ad.id);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleIds, loadAdDetail]);
+    setModal(null);
+  }, [tx, injectSeq]);
 
   // Completer indicator per ad: 'has' (green) / 'none' (grey) / 'unknown' (faint, still loading).
   const completerState = (id: string): 'has' | 'none' | 'unknown' => {
@@ -143,7 +144,14 @@ function TriggersCompleters({ e }: { e: ReturnType<typeof useEmulator> }): JSX.E
         {e.adsStatus.error ? (
           <small className="tcerr" title={e.adsStatus.error}>{e.adsStatus.error}</small>
         ) : ads.length > 0 ? (
-          <small className="hint">{ads.length} ad(s) — <span className="tcdot has" /> has completers</small>
+          loadedCount < ads.length ? (
+            <small className="hint">loading details… {loadedCount}/{ads.length}</small>
+          ) : (
+            <small className="hint tclegend">
+              {ads.length} ad(s) · <span className="tcdot has" /> completers ·{' '}
+              <span className="tcaccentbar" /> interactive
+            </small>
+          )
         ) : (
           <small className="hint">Register the player, then Load ads</small>
         )}
