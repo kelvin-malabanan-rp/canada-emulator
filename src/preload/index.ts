@@ -24,6 +24,10 @@ const emulator: EmulatorBridge = {
   registerPlayer: (req: { playerKey: string; product?: string }) => ipcRenderer.invoke('globalinit:register', req),
   loadPlayerKey: () => ipcRenderer.invoke('globalinit:load'),
   loadQuickKeys: (req: { dir?: string }) => ipcRenderer.invoke('quickkeys:load', req),
+  loadAds: (req: { backendBaseUrl: string; playerCode: string; playerKey: string }) =>
+    ipcRenderer.invoke('ads:load', req),
+  loadAdDetail: (req: { backendBaseUrl: string; playerCode: string; playerKey: string; id: string }) =>
+    ipcRenderer.invoke('ads:adDetail', req),
 };
 
 if (process.contextIsolated) {

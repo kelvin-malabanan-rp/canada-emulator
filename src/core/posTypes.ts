@@ -2,6 +2,7 @@
 import type { PricebookLoadResult } from './pricebook';
 import type { GlobalInitResult } from './globalInit';
 import type { QuickKeyLoadResult } from './quickkeys';
+import type { AdsManifestResult, AdDetailResult } from './adTriggers';
 import type { InjectCommand } from './injectProtocol';
 
 export type Channel = 'vj' | 'pole';
@@ -93,4 +94,13 @@ export interface EmulatorBridge {
   loadPlayerKey(): Promise<GlobalInitResult>;
   /** Load all `.qk` quick-key files from a folder (usualsuspects first). Empty dir uses the bundled defaults. */
   loadQuickKeys(req: { dir?: string }): Promise<QuickKeyLoadResult>;
+  /** Fetch the live ads manifest (ad list) for the player. */
+  loadAds(req: { backendBaseUrl: string; playerCode: string; playerKey: string }): Promise<AdsManifestResult>;
+  /** Fetch one ad's full doc (triggers & completers), on demand. */
+  loadAdDetail(req: {
+    backendBaseUrl: string;
+    playerCode: string;
+    playerKey: string;
+    id: string;
+  }): Promise<AdDetailResult>;
 }

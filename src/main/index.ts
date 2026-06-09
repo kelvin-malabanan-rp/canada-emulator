@@ -11,8 +11,9 @@ import { parsePricebook, resolvePricebookFilename, resolvePricebookDir } from '.
 import type { PricebookLoadResult } from '../core/pricebook';
 import { parseQuickKeys, orderQuickKeyFiles, resolveQuickKeyDir } from '../core/quickkeys';
 import type { QuickKeyFile, QuickKeyLoadResult } from '../core/quickkeys';
-import { DATACENTERS, toGlobalInitConfig, configFromPlayerKeyFile, PLAYER_KEY_FILENAME } from '../core/globalInit';
+import { DATACENTERS, toGlobalInitConfig, configFromPlayerKeyFile, PLAYER_KEY_FILENAME, extractLocationCode } from '../core/globalInit';
 import type { GlobalInitResult } from '../core/globalInit';
+import type { AdsManifestResult, AdDetailResult, RawAdConfig } from '../core/adTriggers';
 
 /** First non-internal MAC address (matches the player's GlobalInit param). */
 function getMacAddress(): string {
@@ -184,6 +185,100 @@ function registerEmulatorIpc(getWindow: () => BrowserWindow | null): void {
       return { ok: false, files: [], dir, error: err instanceof Error ? err.message : String(err) };
     }
   });
+
+  // Ads triggers & completers. Two-step (lazy) to keep the UI snappy:
+  //   ads:load     → GET …/manifests?collectionKey=ads → just the ad list (id + name). Fast.
+  //   ads:adDetail → GET …/elastic/ads/_doc?id=…       → ONE ad's full doc, on demand.
+  // Mirrors the CKPlayer2.0 ContentWorker fetch flow.
+  const adsBackendContext = (req: {
+    backendBaseUrl: string;
+    playerCode: string;
+    playerKey: string;
+  }): { origin: string; tenant: string; locationCode: string; playerCode: string; playerKey: string } | null => {
+    const playerCode = req.playerCode?.trim();
+    const playerKey = req.playerKey?.trim();
+    // "https://host/api/lift/" → "https://host"
+    const origin = (req.backendBaseUrl ?? '').trim().replace(/\/+$/, '').replace(/\/api\/lift.*$/i, '');
+    const tenant = (playerCode?.split('-')[0] ?? '').toLowerCase();
+    if (!origin || !tenant || !playerCode || !playerKey) return null;
+    return { origin, tenant, locationCode: extractLocationCode(playerCode), playerCode, playerKey };
+  };
+
+  const fetchJsonWithTimeout = async (url: string, timeoutMs = 10000): Promise<unknown> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'Content-Type': 'application/json', 'User-Agent': 'CK-Canada-Emulator/1.0' },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+      return await res.json();
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  ipcMain.handle(
+    'ads:load',
+    async (_evt, req: { backendBaseUrl: string; playerCode: string; playerKey: string }): Promise<AdsManifestResult> => {
+      const ctx = adsBackendContext(req);
+      if (!ctx) return { ok: false, ads: [], error: 'Need backend URL, player code, and player key (register first).' };
+      try {
+        const today = new Date();
+        const end = new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000);
+        const ymd = (d: Date): string => {
+          const p = (n: number): string => n.toString().padStart(2, '0');
+          return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`;
+        };
+        const mparams = new URLSearchParams({
+          playerCode: ctx.playerCode,
+          playerKey: ctx.playerKey,
+          locationCode: ctx.locationCode,
+          collectionKey: 'ads',
+          startDate: ymd(today),
+          endDate: ymd(end),
+        });
+        const manifestUrl = `${ctx.origin}/api/lift/${ctx.tenant}/manifests?${mparams}`;
+        console.log(`[Ads] Fetching ads manifest: ${manifestUrl}`);
+        const manifest = (await fetchJsonWithTimeout(manifestUrl)) as { data?: Array<{ id: string | number; name?: string }> };
+        const items = Array.isArray(manifest?.data) ? manifest.data : [];
+        console.log(`[Ads] Manifest returned ${items.length} ad(s)`);
+        return { ok: true, ads: items.map((it) => ({ id: String(it.id), name: it.name ?? String(it.id) })) };
+      } catch (err) {
+        console.error('[Ads] manifest load failed:', err);
+        return { ok: false, ads: [], error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'ads:adDetail',
+    async (
+      _evt,
+      req: { backendBaseUrl: string; playerCode: string; playerKey: string; id: string },
+    ): Promise<AdDetailResult> => {
+      const ctx = adsBackendContext(req);
+      if (!ctx || !req.id) return { ok: false, error: 'Missing player config or ad id.' };
+      try {
+        const dparams = new URLSearchParams({
+          id: req.id,
+          playerCode: ctx.playerCode,
+          playerKey: ctx.playerKey,
+          excludes: 'keywords',
+        });
+        const doc = (await fetchJsonWithTimeout(`${ctx.origin}/api/lift/${ctx.tenant}/elastic/ads/_doc?${dparams}`)) as {
+          data?: Array<{ json?: RawAdConfig }>;
+        };
+        const json = Array.isArray(doc?.data) && doc.data[0]?.json ? doc.data[0].json : null;
+        if (!json) return { ok: false, error: `No ad doc for id ${req.id}` };
+        return { ok: true, ad: json };
+      } catch (err) {
+        console.error(`[Ads] ad doc ${req.id} load failed:`, err);
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
 
   // GlobalInit: send the player.key to each datacenter's services/init and
   // return the first generated config (player.code + tenant endpoint URLs).
