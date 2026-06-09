@@ -47,15 +47,15 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
 .body { flex: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); min-height: 0; overflow: hidden; }
 .body section { padding: 12px; overflow-y: auto; overflow-x: hidden; min-width: 0; }
 .left { border-right: 1px solid #2f333c; display: flex; flex-direction: column; }
-/* Quick Keys and Triggers & Completers split the column into equal halves. */
-.left > .qk,
-.left > .tc { flex: 1 1 0; min-height: 0; }
-.left > .tc { overflow-y: auto; }
+/* Quick Keys is a compact 3×3 block; Triggers & Completers takes the rest,
+   sitting right below the quick-keys pager. */
+.left > .qk { flex: 0 0 auto; }
+.left > .tc { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .right { border-left: 1px solid #2f333c; background: #16181d; }
 h3 { margin: 9px 0 5px; font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: #8b93a3; }
 
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.grid.qk3 { grid-template-columns: 1fr 1fr 1fr; grid-auto-rows: 64px; align-content: start; flex: 1 1 auto; min-height: 0; }
+.grid.qk3 { grid-template-columns: 1fr 1fr 1fr; grid-auto-rows: 64px; align-content: start; flex: 0 0 auto; min-height: 0; }
 .key { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; justify-content: space-between; background: #2a2e37; border: 1px solid #363b45; border-radius: 6px; padding: 8px; color: #e7e9ee; cursor: pointer; height: 64px; overflow: hidden; text-align: left; }
 .key:hover { border-color: #2d6cdf; }
 .key small { color: #9aa; flex-shrink: 0; }
@@ -81,6 +81,10 @@ h3 { margin: 9px 0 5px; font-size: 13px; text-transform: uppercase; letter-spaci
 .tclist { display: flex; flex-direction: column; gap: 6px; }
 .tcrow { display: flex; align-items: center; gap: 8px; background: #20242b; border: 1px solid #2a2e37; border-radius: 6px; padding: 8px 10px; }
 .tcname { flex: 1; min-width: 0; font-size: 13px; color: #d8dbe2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tcdot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; vertical-align: middle; }
+.tcdot.has { background: #3ec46d; }
+.tcdot.none { background: #4a4f5a; }
+.tcdot.unknown { background: #20242b; border: 1px solid #3a3f4a; }
 .tcbtn { background: #2a2e37; color: #cdd2db; border: 1px solid #363b45; border-radius: 5px; padding: 8px 14px; font-size: 13px; cursor: pointer; white-space: nowrap; }
 .tcbtn:disabled { opacity: .4; cursor: default; }
 .tcmodal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 50; }

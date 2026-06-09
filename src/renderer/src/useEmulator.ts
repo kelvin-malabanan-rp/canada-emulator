@@ -83,7 +83,7 @@ export function useEmulator(): {
   loadPricebook: () => Promise<void>;
   addItem: (item: PricebookItem) => void;
   addCustom: (input: { code: string; description: string; priceCents: number; quantity: number }) => void;
-  scan: (code: string) => void;
+  scan: (code: string, description?: string) => void;
   voidLine: (lineNumber: number) => void;
   setQuantity: (lineNumber: number, qty: number) => void;
   setPrice: (lineNumber: number, priceCents: number) => void;
@@ -433,13 +433,13 @@ export function useEmulator(): {
       addItem: (item: PricebookItem) => dispatch(session.addItem(item)),
       addCustom: (input: { code: string; description: string; priceCents: number; quantity: number }) =>
         dispatch(session.addItem(input)),
-      scan: (code: string) => {
+      scan: (code: string, description?: string) => {
         const hit = pricebookIndex.get(code) ?? quickKeys.find((p) => p.code === code);
         dispatch(
           session.addItem(
             hit
               ? { code: hit.code, description: hit.description, priceCents: hit.priceCents }
-              : { code, description: `UPC ${code}`, priceCents: 100 },
+              : { code, description: description?.trim() || `UPC ${code}`, priceCents: 100 },
           ),
         );
       },
