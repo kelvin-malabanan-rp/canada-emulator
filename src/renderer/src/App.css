@@ -33,7 +33,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
 .bar.creds { background: #1e2128; }
 .bar.creds .lbl { font-size: 11px; color: #8b93a3; text-transform: uppercase; letter-spacing: .5px; }
 .bar.creds input.url { width: 280px; }
-.bar.creds input.pkey { width: 150px; }
+.bar.creds input.pkey { width: 340px; }
 .bar.creds .hint { margin: 0 0 0 auto; }
 .spacer { flex: 1; }
 .initcfg { background: #14161a; border-bottom: 1px solid #2f333c; padding: 6px 12px; overflow: visible; }
@@ -44,11 +44,13 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
 .locale button { background: #3a3f4a; margin-left: 4px; }
 .locale button.on { background: #c45b3e; }
 
-.body { flex: 1; display: grid; grid-template-columns: 260px minmax(0, 1fr) 420px; min-height: 0; overflow: hidden; }
+.body { flex: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); min-height: 0; overflow: hidden; }
 .body section { padding: 12px; overflow-y: auto; overflow-x: hidden; min-width: 0; }
 .left { border-right: 1px solid #2f333c; display: flex; flex-direction: column; }
-/* Quick Keys grows to fill the column; Scan/Loyalty stay pinned below it. */
-.left > .qk { flex: 1 1 auto; min-height: 0; }
+/* Quick Keys and Triggers & Completers split the column into equal halves. */
+.left > .qk,
+.left > .tc { flex: 1 1 0; min-height: 0; }
+.left > .tc { overflow-y: auto; }
 .right { border-left: 1px solid #2f333c; background: #16181d; }
 h3 { margin: 9px 0 5px; font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: #8b93a3; }
 
@@ -69,6 +71,27 @@ h3 { margin: 9px 0 5px; font-size: 13px; text-transform: uppercase; letter-spaci
 .qkpager { display: flex; align-items: center; justify-content: center; gap: 12px; font-size: 12px; color: #aab; }
 .qkpager button { background: #3a3f4a; color: #fff; border: 0; border-radius: 4px; padding: 2px 10px; cursor: pointer; }
 .qkpager button:disabled { opacity: .4; cursor: default; }
+
+/* Triggers & Completers */
+.tc { display: flex; flex-direction: column; gap: 6px; }
+.tcctl { display: flex; align-items: center; gap: 8px; }
+.tcctl button { background: #2d6cdf; color: #fff; border: 0; border-radius: 4px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+.tcctl button:disabled { opacity: .5; cursor: default; }
+.tcerr { color: #e2777f; font-size: 11px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tclist { display: flex; flex-direction: column; gap: 6px; }
+.tcrow { display: flex; align-items: center; gap: 8px; background: #20242b; border: 1px solid #2a2e37; border-radius: 6px; padding: 8px 10px; }
+.tcname { flex: 1; min-width: 0; font-size: 13px; color: #d8dbe2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tcbtn { background: #2a2e37; color: #cdd2db; border: 1px solid #363b45; border-radius: 5px; padding: 8px 14px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.tcbtn:disabled { opacity: .4; cursor: default; }
+.tcmodal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 50; }
+.tcmodalbox { background: #1b1e24; border: 1px solid #363b45; border-radius: 8px; padding: 12px; width: 420px; max-width: 90vw; max-height: 70vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.tcmodalhead { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.tcmodalhead button { background: #3a3f4a; color: #fff; border: 0; border-radius: 4px; width: 24px; height: 24px; cursor: pointer; font-size: 14px; line-height: 1; }
+.tcitems { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.tcitem { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; background: #20242b; border: 1px solid #2a2e37; border-radius: 6px; padding: 6px 8px; color: #e7e9ee; cursor: pointer; text-align: left; }
+.tcitem:hover { border-color: #2d6cdf; }
+.tcitem span { font-size: 11px; line-height: 1.2; }
+.tcitem small { color: #9aa; font-family: ui-monospace, Menlo, monospace; font-size: 10px; }
 .row { display: flex; gap: 6px; flex-wrap: wrap; }
 .row input { flex: 1 1 80px; min-width: 0; background: #14161a; border: 1px solid #333; color: #e7e9ee; border-radius: 4px; padding: 6px; }
 .row button, .tender button, .lineactions button, .loghead button { background: #2d6cdf; color: #fff; border: 0; border-radius: 4px; padding: 6px 10px; cursor: pointer; }
@@ -95,7 +118,7 @@ h3 { margin: 9px 0 5px; font-size: 13px; text-transform: uppercase; letter-spaci
 .tender button { flex: 1; padding: 12px; font-size: 14px; background: #2f9e54; }
 .tender button.voidticket { background: #8a3b32; }
 
-.loghead { display: flex; justify-content: space-between; align-items: center; }
+.loghead { display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 2; background: #16181d; margin: -12px -12px 6px; padding: 12px 12px 6px; }
 .loghead button { background: #3a3f4a; padding: 3px 8px; font-size: 12px; }
 .log { font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
 .logline { display: flex; gap: 6px; padding: 3px 0; border-bottom: 1px solid #20242b; align-items: baseline; }

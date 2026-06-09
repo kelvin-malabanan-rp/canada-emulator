@@ -19,6 +19,12 @@ import {
 } from '../../core/pricebook';
 import type { GlobalInitConfig } from '../../core/globalInit';
 import { quickKeyColor, type QuickKeyColor, type QuickKeyEntry, type QuickKeyFile } from '../../core/quickkeys';
+import {
+  extractTriggersCompleters,
+  orderManifest,
+  type AdTriggersCompleters,
+  type AdManifestEntry,
+} from '../../core/adTriggers';
 
 export interface LogEntry {
   id: number;
@@ -66,6 +72,11 @@ export function useEmulator(): {
   quickKeyFiles: QuickKeyFile[];
   quickKeyColorFor: (upc: string) => QuickKeyColor;
   fireQuickKey: (entry: QuickKeyEntry) => void;
+  adManifest: AdManifestEntry[];
+  adDetails: Record<string, AdTriggersCompleters>;
+  adsStatus: { loading: boolean; error: string | null };
+  loadAds: () => Promise<void>;
+  loadAdDetail: (id: string) => Promise<AdTriggersCompleters | null>;
   pricebookDir: string;
   setPricebookDir: (dir: string) => void;
   pricebookStatus: PricebookLoadResult | null;
@@ -144,10 +155,22 @@ export function useEmulator(): {
 
   // Quick keys loaded from the bundled .qk files (legacy usualsuspects format).
   const [quickKeyFiles, setQuickKeyFiles] = useState<QuickKeyFile[]>([]);
-  // Ad-trigger UPCs (for green keys) would require replicating CK Player 2.0's
-  // full content sync (manifest → ad → adTriggers → conditions → filters), so
-  // green is not sourced here — keys are grey (not in pricebook) or normal.
-  const adCodes = useMemo(() => new Set<string>(), []);
+
+  // Ads. The manifest (id + name) loads fast; each ad's triggers/completers are
+  // fetched lazily on demand and cached in adDetails (keyed by ad id).
+  const [adManifest, setAdManifest] = useState<AdManifestEntry[]>([]);
+  const [adDetails, setAdDetails] = useState<Record<string, AdTriggersCompleters>>({});
+  const [adsStatus, setAdsStatus] = useState<{ loading: boolean; error: string | null }>({
+    loading: false,
+    error: null,
+  });
+
+  // Quick keys turn green when their UPC is a trigger for an inspected ad —
+  // sourced from the ad details fetched so far.
+  const adCodes = useMemo(
+    () => new Set(Object.values(adDetails).flatMap((g) => g.triggers.map((t) => t.code))),
+    [adDetails],
+  );
 
   const pricebookCodes = useMemo(() => new Set(pricebookIndex.keys()), [pricebookIndex]);
   const quickKeyColorFor = useCallback(
@@ -168,6 +191,73 @@ export function useEmulator(): {
       logSys(`Quick keys error: ${res.error}`);
     }
   }, [logSys]);
+
+  // GlobalInit registration result — the datacenter the player.key resolved to
+  // (e2e / dev / prod), with that datacenter's endpoint URLs.
+  const [globalInit, setGlobalInit] = useState<GlobalInitConfig | null>(null);
+  const [globalInitError, setGlobalInitError] = useState<string | null>(null);
+
+  // The backend to talk to is auto-detected from the registered datacenter's
+  // endpoints (so an e2e player.key hits e2e even if the Backend field says dev).
+  // Falls back to the manually entered Backend URL before registration.
+  const resolvedBackendUrl = useMemo(() => {
+    const ep = globalInit?.endpoints ?? {};
+    return ep['manifest.url'] || ep['contentCron.baseUrl'] || ep['init.url'] || ep['heartbeat.url'] || playerConfig.backendBaseUrl;
+  }, [globalInit, playerConfig.backendBaseUrl]);
+
+  const loadAds = useCallback(async () => {
+    setAdsStatus({ loading: true, error: null });
+    logSys(`Loading ads for "${playerConfig.playerCode}" from ${resolvedBackendUrl}…`);
+    try {
+      const req = {
+        backendBaseUrl: resolvedBackendUrl,
+        playerCode: playerConfig.playerCode,
+        playerKey: playerConfig.playerKey,
+      };
+      const res = await window.emulator.loadAds(req);
+      if (res.ok) {
+        setAdManifest(orderManifest(res.ads));
+        setAdDetails({});
+        setAdsStatus({ loading: false, error: null });
+        logSys(`Ads loaded: ${res.ads.length} ad(s)`);
+      } else {
+        setAdManifest([]);
+        setAdsStatus({ loading: false, error: res.error ?? 'unknown error' });
+        logSys(`Ads error: ${res.error}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setAdsStatus({ loading: false, error: msg });
+      logSys(`Ads error: ${msg} (restart the app if you just updated it)`);
+    }
+  }, [resolvedBackendUrl, playerConfig.playerCode, playerConfig.playerKey, logSys]);
+
+  // Fetch one ad's triggers/completers on demand (cached by id).
+  const loadAdDetail = useCallback(
+    async (id: string): Promise<AdTriggersCompleters | null> => {
+      const cached = adDetails[id];
+      if (cached) return cached;
+      try {
+        const res = await window.emulator.loadAdDetail({
+          backendBaseUrl: resolvedBackendUrl,
+          playerCode: playerConfig.playerCode,
+          playerKey: playerConfig.playerKey,
+          id,
+        });
+        if (!res.ok || !res.ad) {
+          logSys(`Ad detail error (${id}): ${res.error}`);
+          return null;
+        }
+        const detail = extractTriggersCompleters(res.ad);
+        setAdDetails((prev) => ({ ...prev, [id]: detail }));
+        return detail;
+      } catch (err) {
+        logSys(`Ad detail error (${id}): ${err instanceof Error ? err.message : String(err)}`);
+        return null;
+      }
+    },
+    [adDetails, resolvedBackendUrl, playerConfig.playerCode, playerConfig.playerKey, logSys],
+  );
 
   // Auto-load quick keys once on mount.
   const quickKeysLoadedRef = useRef(false);
@@ -266,9 +356,6 @@ export function useEmulator(): {
     void loadPricebook();
   }, [loadPricebook]);
 
-  const [globalInit, setGlobalInit] = useState<GlobalInitConfig | null>(null);
-  const [globalInitError, setGlobalInitError] = useState<string | null>(null);
-
   // On startup, rehydrate from the persisted player.key file (if a prior
   // registration saved one) so the generated config + endpoints survive a
   // restart — parity with the legacy player reading its player.key file.
@@ -334,6 +421,11 @@ export function useEmulator(): {
             quantity: entry.quantity,
           }),
         ),
+      adManifest,
+      adDetails,
+      adsStatus,
+      loadAds,
+      loadAdDetail,
       pricebookDir,
       setPricebookDir,
       pricebookStatus,
@@ -373,6 +465,11 @@ export function useEmulator(): {
       quickKeys,
       quickKeyFiles,
       quickKeyColorFor,
+      adManifest,
+      adDetails,
+      adsStatus,
+      loadAds,
+      loadAdDetail,
       pricebookDir,
       setPricebookDir,
       pricebookStatus,

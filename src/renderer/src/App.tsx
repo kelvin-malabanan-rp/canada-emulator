@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEmulator } from './useEmulator';
 import { formatCurrency, type PosLocale } from '../../core/currency';
 import { paginate } from '../../core/quickkeys';
+import type { AdItem } from '../../core/adTriggers';
 import { REGISTER_TYPES, portsForRegisterType, type ConnState, type RegisterType } from '../../core/posTypes';
 import './App.css';
 
@@ -84,12 +85,129 @@ function QuickKeys({ e, locale }: { e: ReturnType<typeof useEmulator>; locale: P
   );
 }
 
+/**
+ * Triggers & Completers — lists the live ads (from the backend manifest), each
+ * with Triggers (UPCs that fire it) and Completers (items that complete its
+ * offer). Click an item in the modal to scan it straight into the basket.
+ */
+function TriggersCompleters({ e }: { e: ReturnType<typeof useEmulator> }): JSX.Element {
+  const [page, setPage] = useState(0);
+  const [modal, setModal] = useState<{
+    ad: { id: string; name: string };
+    kind: 'triggers' | 'completers';
+    items: AdItem[];
+  } | null>(null);
+  const [busy, setBusy] = useState<string | null>(null); // "<id>:triggers" | "<id>:completers"
+  const perPage = 4;
+  const ads = e.adManifest;
+  const pageCount = Math.max(1, Math.ceil(ads.length / perPage));
+  const safePage = Math.min(page, pageCount - 1);
+  const current = ads.slice(safePage * perPage, safePage * perPage + perPage);
+
+  const open = async (ad: { id: string; name: string }, kind: 'triggers' | 'completers'): Promise<void> => {
+    setBusy(`${ad.id}:${kind}`);
+    const detail = e.adDetails[ad.id] ?? (await e.loadAdDetail(ad.id));
+    setBusy(null);
+    const items = !detail ? [] : kind === 'triggers' ? detail.triggers : detail.completers;
+    setModal({ ad, kind, items });
+  };
+
+  // Scanning a trigger fires the ad → close the triggers modal and surface that
+  // ad's completers (mirrors the real basket flow). Scanning a completer just
+  // rings it up and leaves the modal open.
+  const onItemClick = (it: AdItem): void => {
+    if (!modal) return;
+    e.scan(it.code);
+    if (modal.kind === 'triggers') {
+      // Trigger fired → close this modal and open the ad's completers.
+      const completers = e.adDetails[modal.ad.id]?.completers ?? [];
+      setModal({ ad: modal.ad, kind: 'completers', items: completers });
+    } else {
+      // Completer selected → close the modal.
+      setModal(null);
+    }
+  };
+
+  return (
+    <div className="tc">
+      <div className="tcctl">
+        <button onClick={() => void e.loadAds()} disabled={e.adsStatus.loading}>
+          {e.adsStatus.loading ? 'Loading…' : 'Load ads'}
+        </button>
+        {e.adsStatus.error ? (
+          <small className="tcerr" title={e.adsStatus.error}>{e.adsStatus.error}</small>
+        ) : ads.length > 0 ? (
+          <small className="hint">{ads.length} ad(s) — green keys have a trigger</small>
+        ) : (
+          <small className="hint">Register the player, then Load ads</small>
+        )}
+      </div>
+
+      {ads.length > 0 && (
+        <>
+          <div className="tclist">
+            {current.map((ad) => (
+              <div key={ad.id || ad.name} className="tcrow">
+                <span className="tcname" title={ad.name}>{ad.name}</span>
+                <button className="tcbtn" disabled={busy !== null} onClick={() => void open(ad, 'triggers')}>
+                  {busy === `${ad.id}:triggers` ? '…' : 'Triggers'}
+                </button>
+                <button className="tcbtn" disabled={busy !== null} onClick={() => void open(ad, 'completers')}>
+                  {busy === `${ad.id}:completers` ? '…' : 'Compl.'}
+                </button>
+              </div>
+            ))}
+          </div>
+          {pageCount > 1 && (
+            <div className="qkpager">
+              <button disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>‹</button>
+              <span>{safePage + 1}/{pageCount}</span>
+              <button disabled={safePage >= pageCount - 1} onClick={() => setPage(safePage + 1)}>›</button>
+            </div>
+          )}
+        </>
+      )}
+
+      {modal && (
+        <div className="tcmodal" onClick={() => setModal(null)}>
+          <div className="tcmodalbox" onClick={(ev) => ev.stopPropagation()}>
+            <div className="tcmodalhead">
+              <b>{modal.kind === 'triggers' ? 'Triggers' : 'Completers'} — {modal.ad.name}</b>
+              <button onClick={() => setModal(null)}>×</button>
+            </div>
+            {modal.items.length === 0 ? (
+              <small className="hint">{modal.kind === 'triggers' ? 'No triggers.' : 'No completers.'}</small>
+            ) : (
+              <div className="tcitems">
+                {modal.items.map((it) => (
+                  <button
+                    key={it.code}
+                    className="tcitem"
+                    title={modal.kind === 'triggers' ? 'Scan to fire this ad, then pick a completer' : 'Scan this completer into the basket'}
+                    onClick={() => onItemClick(it)}
+                  >
+                    <span>{it.description || it.code}</span>
+                    <small>{it.code}</small>
+                  </button>
+                ))}
+              </div>
+            )}
+            <small className="hint">
+              {modal.kind === 'triggers'
+                ? 'Click a trigger to scan it — then its completers appear.'
+                : 'Click a completer to scan it into the basket.'}
+            </small>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function App(): JSX.Element {
   const e = useEmulator();
   const { snapshot } = e;
   const locale = snapshot.locale;
-  const [scanCode, setScanCode] = useState('');
-  const [card, setCard] = useState('8018782603800034999992');
 
   return (
     <div className="app">
@@ -129,13 +247,6 @@ function App(): JSX.Element {
       </header>
 
       <header className="bar creds">
-        <span className="lbl">Player Code</span>
-        <input
-          className="host"
-          value={e.playerConfig.playerCode}
-          placeholder="e.g. 31989"
-          onChange={(ev) => e.setPlayerConfig({ ...e.playerConfig, playerCode: ev.target.value })}
-        />
         <span className="lbl">Player Key</span>
         <input
           className="pkey"
@@ -144,15 +255,10 @@ function App(): JSX.Element {
           placeholder="player.key"
           onChange={(ev) => e.setPlayerConfig({ ...e.playerConfig, playerKey: ev.target.value })}
         />
-        <span className="lbl">Backend</span>
-        <input
-          className="url"
-          value={e.playerConfig.backendBaseUrl}
-          placeholder="https://player.circlekliftdev.com/api/lift/"
-          onChange={(ev) => e.setPlayerConfig({ ...e.playerConfig, backendBaseUrl: ev.target.value })}
-        />
         <button onClick={() => void e.registerPlayer()}>Register</button>
-        <small className="hint">Register sends the player.key to the datacenters (like CKP2 + legacy).</small>
+        <small className="hint">
+          Register resolves the datacenter, player code &amp; backend automatically (like CKP2 + legacy).
+        </small>
       </header>
 
       {(e.globalInit || e.globalInitError) && (
@@ -177,24 +283,8 @@ function App(): JSX.Element {
           <h3>Quick Keys</h3>
           <QuickKeys e={e} locale={locale} />
 
-          <h3>Scan</h3>
-          <form
-            className="row"
-            onSubmit={(ev) => {
-              ev.preventDefault();
-              if (scanCode.trim()) e.scan(scanCode.trim());
-              setScanCode('');
-            }}
-          >
-            <input placeholder="UPC / barcode" value={scanCode} onChange={(ev) => setScanCode(ev.target.value)} />
-            <button type="submit">Scan</button>
-          </form>
-
-          <h3>Loyalty (EasyPay / EventId 1024)</h3>
-          <div className="row">
-            <input value={card} onChange={(ev) => setCard(ev.target.value)} placeholder="loyalty # or 12-digit UPC" />
-            <button onClick={() => e.loyalty(card.trim())}>Scan Card</button>
-          </div>
+          <h3>Triggers &amp; Completers</h3>
+          <TriggersCompleters e={e} />
         </section>
 
         <section className="center">
