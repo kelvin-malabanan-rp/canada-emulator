@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useEmulator } from './useEmulator';
 import { formatCurrency, type PosLocale } from '../../core/currency';
 import { paginate } from '../../core/quickkeys';
@@ -6,8 +6,7 @@ import type { AdItem } from '../../core/adTriggers';
 import { REGISTER_TYPES, portsForRegisterType, type ConnState, type RegisterType } from '../../core/posTypes';
 import './App.css';
 
-const QK_COLS = 3;
-const QK_ROW_STRIDE = 72; // key height (64) + grid gap (8)
+const QK_PER_PAGE = 9; // 3 columns × 3 rows
 
 function Dot({ state }: { state: ConnState }): JSX.Element {
   const color = state === 'connected' ? '#3ec46d' : state === 'connecting' ? '#e6b450' : '#d9534f';
@@ -18,8 +17,7 @@ function Dot({ state }: { state: ConnState }): JSX.Element {
 function QuickKeys({ e, locale }: { e: ReturnType<typeof useEmulator>; locale: PosLocale }): JSX.Element {
   const [tab, setTab] = useState(0);
   const [page, setPage] = useState(0);
-  const [perPage, setPerPage] = useState(9);
-  const gridRef = useRef<HTMLDivElement>(null);
+  const perPage = QK_PER_PAGE; // fixed 3×3 grid
   const files = e.quickKeyFiles;
   const active = files[Math.min(tab, Math.max(0, files.length - 1))];
   const pages = useMemo(() => paginate(active?.entries ?? [], perPage), [active, perPage]);
@@ -27,22 +25,6 @@ function QuickKeys({ e, locale }: { e: ReturnType<typeof useEmulator>; locale: P
   const current = pages[safePage] ?? [];
 
   useEffect(() => setPage(0), [tab]);
-
-  // Fill the available column height: compute how many 3-wide rows fit. Re-runs
-  // when the grid mounts (quick keys load async, so the grid isn't in the DOM on
-  // first render) and whenever the active file changes.
-  useEffect(() => {
-    const el = gridRef.current;
-    if (!el) return;
-    const recompute = (): void => {
-      const rows = Math.max(1, Math.floor((el.clientHeight + 8) / QK_ROW_STRIDE));
-      setPerPage(rows * QK_COLS);
-    };
-    recompute();
-    const ro = new ResizeObserver(recompute);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [active]);
 
   return (
     <div className="qk">
@@ -55,7 +37,7 @@ function QuickKeys({ e, locale }: { e: ReturnType<typeof useEmulator>; locale: P
           ))}
         </div>
       )}
-      <div className="grid qk3" ref={gridRef}>
+      <div className="grid qk3">
         {current.map((entry, i) => (
           <button
             key={`${entry.upc}-${i}`}
@@ -98,11 +80,29 @@ function TriggersCompleters({ e }: { e: ReturnType<typeof useEmulator> }): JSX.E
     items: AdItem[];
   } | null>(null);
   const [busy, setBusy] = useState<string | null>(null); // "<id>:triggers" | "<id>:completers"
-  const perPage = 4;
+  const perPage = 5;
   const ads = e.adManifest;
   const pageCount = Math.max(1, Math.ceil(ads.length / perPage));
   const safePage = Math.min(page, pageCount - 1);
   const current = ads.slice(safePage * perPage, safePage * perPage + perPage);
+
+  // Prefetch the visible page's details so each row can show whether it has a
+  // completer (only the 4 shown — keeps the lazy/fast behaviour).
+  const visibleIds = current.map((a) => a.id).join(',');
+  const { loadAdDetail, adDetails } = e;
+  useEffect(() => {
+    current.forEach((ad) => {
+      if (!adDetails[ad.id]) void loadAdDetail(ad.id);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleIds, loadAdDetail]);
+
+  // Completer indicator per ad: 'has' (green) / 'none' (grey) / 'unknown' (faint, still loading).
+  const completerState = (id: string): 'has' | 'none' | 'unknown' => {
+    const d = adDetails[id];
+    if (!d) return 'unknown';
+    return d.completers.length > 0 ? 'has' : 'none';
+  };
 
   const open = async (ad: { id: string; name: string }, kind: 'triggers' | 'completers'): Promise<void> => {
     setBusy(`${ad.id}:${kind}`);
@@ -117,7 +117,7 @@ function TriggersCompleters({ e }: { e: ReturnType<typeof useEmulator> }): JSX.E
   // rings it up and leaves the modal open.
   const onItemClick = (it: AdItem): void => {
     if (!modal) return;
-    e.scan(it.code);
+    e.scan(it.code, it.description);
     if (modal.kind === 'triggers') {
       // Trigger fired → close this modal and open the ad's completers.
       const completers = e.adDetails[modal.ad.id]?.completers ?? [];
@@ -137,7 +137,7 @@ function TriggersCompleters({ e }: { e: ReturnType<typeof useEmulator> }): JSX.E
         {e.adsStatus.error ? (
           <small className="tcerr" title={e.adsStatus.error}>{e.adsStatus.error}</small>
         ) : ads.length > 0 ? (
-          <small className="hint">{ads.length} ad(s) — green keys have a trigger</small>
+          <small className="hint">{ads.length} ad(s) — <span className="tcdot has" /> has completers</small>
         ) : (
           <small className="hint">Register the player, then Load ads</small>
         )}
@@ -146,17 +146,24 @@ function TriggersCompleters({ e }: { e: ReturnType<typeof useEmulator> }): JSX.E
       {ads.length > 0 && (
         <>
           <div className="tclist">
-            {current.map((ad) => (
-              <div key={ad.id || ad.name} className="tcrow">
-                <span className="tcname" title={ad.name}>{ad.name}</span>
-                <button className="tcbtn" disabled={busy !== null} onClick={() => void open(ad, 'triggers')}>
-                  {busy === `${ad.id}:triggers` ? '…' : 'Triggers'}
-                </button>
-                <button className="tcbtn" disabled={busy !== null} onClick={() => void open(ad, 'completers')}>
-                  {busy === `${ad.id}:completers` ? '…' : 'Compl.'}
-                </button>
-              </div>
-            ))}
+            {current.map((ad) => {
+              const cs = completerState(ad.id);
+              return (
+                <div key={ad.id || ad.name} className="tcrow">
+                  <span
+                    className={`tcdot ${cs}`}
+                    title={cs === 'has' ? 'Has completers' : cs === 'none' ? 'No completers' : 'Checking…'}
+                  />
+                  <span className="tcname" title={ad.name}>{ad.name}</span>
+                  <button className="tcbtn" disabled={busy !== null} onClick={() => void open(ad, 'triggers')}>
+                    {busy === `${ad.id}:triggers` ? '…' : 'Triggers'}
+                  </button>
+                  <button className="tcbtn" disabled={busy !== null} onClick={() => void open(ad, 'completers')}>
+                    {busy === `${ad.id}:completers` ? '…' : 'Compl.'}
+                  </button>
+                </div>
+              );
+            })}
           </div>
           {pageCount > 1 && (
             <div className="qkpager">
