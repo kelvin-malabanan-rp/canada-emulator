@@ -38,12 +38,14 @@ fr-CA balance uses the legacy `dû` → `U+FFFD` → space substitution.
 
 ```bash
 npm install
-npm run dev      # launch the emulator (Electron)
+npm run dev      # launch the emulator (Electron) — renderer dev server on :5273
 npm test         # unit + round-trip tests
 npm run build    # typecheck + production build
 ```
 
-> **Start CK Player 2.0 first, then the emulator.** See *Tips* below.
+> Launch order doesn't matter: the emulator's Vite dev server runs on **5273**
+> (distinct from CK Player 2.0's `5173`), so starting it first no longer blanks
+> the player. See *Tips*.
 
 ## Bundled, self-contained fixtures
 
@@ -98,12 +100,15 @@ No external `liftck_player` checkout is required — the emulator ships its own:
 
 ## Tips
 
-- **Launch order:** start **CK Player 2.0 first**, then the emulator. Launching
-  the emulator first leaves it retrying the connection while the player boots;
-  if you see CK Player 2.0 render a **blank/white screen**, start the player
-  cleanly first and connect the emulator afterward.
+- **Launch order is free.** The emulator's renderer dev server is pinned to
+  **5273** (`electron.vite.config.ts`), separate from CK Player 2.0's `5173`
+  (which CKP2 requires via `strictPort`). Previously both defaulted to `5173`, so
+  starting the emulator first stole the port and CK Player 2.0 rendered a
+  **blank/white screen** — that's fixed; start them in any order.
 - **Bulloch** connects pole-only — the VJ socket is intentionally never opened,
   so there's no `5438` reconnect spam in that mode.
+- The completer modal **auto-closes** when CK Player 2.0 acts on the offer (a
+  completer inject over the VJ reverse channel) or the transaction ends.
 
 ## Architecture
 
