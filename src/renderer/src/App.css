@@ -70,8 +70,9 @@ h3 { margin: 9px 0 5px; font-size: 13px; text-transform: uppercase; letter-spaci
 .qktabs { display: flex; flex-wrap: wrap; gap: 4px; }
 .qktabs button { background: #2a2e37; color: #aab; border: 1px solid #363b45; border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
 .qktabs button.on { background: #2d6cdf; color: #fff; border-color: #2d6cdf; }
-.qkpager { display: flex; align-items: center; justify-content: center; gap: 12px; font-size: 12px; color: #aab; }
-.qkpager button { background: #3a3f4a; color: #fff; border: 0; border-radius: 4px; padding: 2px 10px; cursor: pointer; }
+.qkpager { display: flex; align-items: center; justify-content: center; gap: 14px; font-size: 14px; color: #aab; }
+.qkpager button { background: #3a3f4a; color: #fff; border: 0; border-radius: 5px; padding: 7px 16px; font-size: 16px; line-height: 1; cursor: pointer; }
+.qkpager button:hover:not(:disabled) { background: #474d59; }
 .qkpager button:disabled { opacity: .4; cursor: default; }
 
 /* Triggers & Completers */
