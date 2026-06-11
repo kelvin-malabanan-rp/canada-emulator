@@ -243,6 +243,9 @@ function App(): JSX.Element {
   const e = useEmulator();
   const { snapshot } = e;
   const locale = snapshot.locale;
+  // Tender/void only make sense with a live basket; disabled when empty so they
+  // can't spawn stray transactions or be spammed.
+  const hasItems = snapshot.lines.some((l) => !l.voided);
 
   return (
     <div className="app">
@@ -315,7 +318,12 @@ function App(): JSX.Element {
 
       <div className="body">
         <section className="left">
-          <h3>Quick Keys</h3>
+          <div className="qkhead">
+            <h3>Quick Keys</h3>
+            <button className="qkreload" onClick={() => void e.reloadQuickKeys()} title="Reload quick keys from the .qk files">
+              ↻ Reload
+            </button>
+          </div>
           <QuickKeys e={e} locale={locale} />
 
           <h3>Triggers &amp; Completers</h3>
@@ -369,10 +377,10 @@ function App(): JSX.Element {
           </div>
 
           <div className="tender">
-            <button onClick={() => e.tender('cash-exact')}>Cash (exact)</button>
-            <button onClick={() => e.tender('next-dollar')}>Next $</button>
-            <button onClick={() => e.tender('amount', snapshot.totalCents + 500)}>Cash +$5</button>
-            <button className="voidticket" onClick={() => e.voidTicket()}>Void Ticket</button>
+            <button disabled={!hasItems} onClick={() => e.tender('cash-exact')}>Cash (exact)</button>
+            <button disabled={!hasItems} onClick={() => e.tender('next-dollar')}>Next $</button>
+            <button disabled={!hasItems} onClick={() => e.tender('amount', snapshot.totalCents + 500)}>Cash +$5</button>
+            <button className="voidticket" disabled={!hasItems} onClick={() => e.voidTicket()}>Void Ticket</button>
           </div>
         </section>
 

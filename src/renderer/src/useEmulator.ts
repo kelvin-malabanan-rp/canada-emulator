@@ -73,6 +73,7 @@ export function useEmulator(): {
   quickKeyFiles: QuickKeyFile[];
   quickKeyColorFor: (upc: string) => QuickKeyColor;
   fireQuickKey: (entry: QuickKeyEntry) => void;
+  reloadQuickKeys: () => Promise<void>;
   adManifest: AdManifestEntry[];
   adDetails: Record<string, AdTriggersCompleters>;
   adsStatus: { loading: boolean; error: string | null };
@@ -453,6 +454,7 @@ export function useEmulator(): {
             quantity: entry.quantity,
           }),
         ),
+      reloadQuickKeys: loadQuickKeys,
       adManifest,
       adDetails,
       adsStatus,
@@ -498,6 +500,7 @@ export function useEmulator(): {
       quickKeys,
       quickKeyFiles,
       quickKeyColorFor,
+      loadQuickKeys,
       adManifest,
       adDetails,
       adsStatus,
