@@ -55,6 +55,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
 .left > .tc { flex: 3 1 0; min-height: 0; overflow: hidden; }
 .right { border-left: 1px solid #2f333c; background: #16181d; }
 h3 { margin: 9px 0 5px; font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: #8b93a3; }
+.qkhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.qkreload { background: #2a2e37; color: #aab; border: 1px solid #363b45; border-radius: 4px; padding: 3px 9px; font-size: 11px; cursor: pointer; white-space: nowrap; }
+.qkreload:hover { background: #333845; color: #fff; }
 
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 /* Reserve a fixed 3-row height (3×64px + 2×8px gap) so a short last page
@@ -138,6 +141,7 @@ h3 { margin: 9px 0 5px; font-size: 13px; text-transform: uppercase; letter-spaci
 .tender { display: flex; gap: 8px; margin-top: 14px; }
 .tender button { flex: 1; padding: 12px; font-size: 14px; background: #2f9e54; }
 .tender button.voidticket { background: #8a3b32; }
+.tender button:disabled { opacity: .4; cursor: default; }
 
 .loghead { display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 2; background: #16181d; margin: -12px -12px 6px; padding: 12px 12px 6px; }
 .loghead button { background: #3a3f4a; padding: 3px 8px; font-size: 12px; }

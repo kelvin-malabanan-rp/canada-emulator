@@ -3,3 +3,7 @@ out
 dist
 *.log
 .DS_Store
+
+# Quick keys are supplied locally per dev (paste a folder in the UI or drop a
+# .qk here); not tracked in the repo.
+resources/quickkey/*.qk
