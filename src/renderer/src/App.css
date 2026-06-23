@@ -51,8 +51,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
    sitting right below the quick-keys pager. */
 /* Split the column ~40/60: Quick Keys a bit smaller so the 4 ad rows + Load bar
    + pager fit without the ads list needing to scroll. */
-.left > .qk { flex: 2 1 0; min-height: 0; overflow: hidden; }
-.left > .tc { flex: 3 1 0; min-height: 0; overflow: hidden; }
+.left > .qk { flex: 0 0 auto; min-height: 0; overflow: hidden; }
+.left > .tc { flex: 0 0 auto; min-height: 0; overflow: hidden; }
 .right { border-left: 1px solid #2f333c; background: #16181d; }
 h3 { margin: 9px 0 5px; font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: #8b93a3; }
 .qkhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -65,8 +65,9 @@ h3 { margin: 9px 0 5px; font-size: 13px; text-transform: uppercase; letter-spaci
 /* Keys grow to fill the Quick Keys half: 3 fixed rows that share the height
    (1fr each) so the grid fills the space and the pager sits just below it.
    The fixed 3 rows keep a short last page from collapsing the grid. */
-.grid.qk3 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: repeat(3, 1fr); flex: 1 1 auto; min-height: 0; }
-.key { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; justify-content: space-between; background: #2a2e37; border: 1px solid #363b45; border-radius: 6px; padding: 8px; color: #e7e9ee; cursor: pointer; min-height: 56px; overflow: hidden; text-align: left; }
+.grid.qk3 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: repeat(3, 64px); overflow: hidden; }
+.key { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; justify-content: space-between; background: #2a2e37; border: 1px solid #363b45; border-radius: 6px; padding: 8px; color: #e7e9ee; cursor: pointer; overflow: hidden; text-align: left; }
+.qk3 .key { min-height: 0; }
 .key:hover { border-color: #2d6cdf; }
 .key small { color: #9aa; flex-shrink: 0; }
 .key span { font-size: 11px; line-height: 1.2; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
@@ -74,14 +75,24 @@ h3 { margin: 9px 0 5px; font-size: 13px; text-transform: uppercase; letter-spaci
 .key.grey { background: #20242b; border-color: #2a2e37; color: #7e8696; }
 
 /* Quick-key tabs / pager */
-.qk { display: flex; flex-direction: column; gap: 6px; }
+.qk { display: flex; flex-direction: column; gap: 6px; min-height: 0; overflow: hidden; }
 .qktabs { display: flex; flex-wrap: wrap; gap: 4px; }
 .qktabs button { background: #2a2e37; color: #aab; border: 1px solid #363b45; border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
 .qktabs button.on { background: #2d6cdf; color: #fff; border-color: #2d6cdf; }
-.qkpager { display: flex; align-items: center; justify-content: center; gap: 14px; font-size: 14px; color: #aab; }
+.qkpager { display: flex; align-items: center; justify-content: center; gap: 14px; font-size: 14px; color: #aab; flex-shrink: 0; }
 .qkpager button { background: #3a3f4a; color: #fff; border: 0; border-radius: 5px; padding: 7px 16px; font-size: 16px; line-height: 1; cursor: pointer; }
 .qkpager button:hover:not(:disabled) { background: #474d59; }
 .qkpager button:disabled { opacity: .4; cursor: default; }
+
+/* Loyalty / EasyPay */
+.loyalty { margin: 6px 0; }
+.loyalty h3 { margin-bottom: 4px; }
+.loyaltyrow { display: flex; gap: 6px; }
+.loyaltyinput { flex: 1; min-width: 0; background: #14161a; border: 1px solid #333; color: #e7e9ee; border-radius: 4px; padding: 6px 8px; font-size: 12px; }
+.loyaltyinput::placeholder { color: #5a6270; }
+.loyaltybtn { background: #2d6cdf; color: #fff; border: 0; border-radius: 4px; padding: 6px 12px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.loyaltybtn:hover:not(:disabled) { background: #3a78ea; }
+.loyaltybtn:disabled { opacity: .4; cursor: default; }
 
 /* Triggers & Completers */
 .tc { display: flex; flex-direction: column; gap: 6px; }
@@ -90,7 +101,7 @@ h3 { margin: 9px 0 5px; font-size: 13px; text-transform: uppercase; letter-spaci
 .tcctl button:disabled { opacity: .5; cursor: default; }
 .tcerr { color: #e2777f; font-size: 11px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Only the list scrolls (if ever); the Load-ads bar and pager stay pinned. */
-.tclist { display: flex; flex-direction: column; gap: 5px; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.tclist { display: flex; flex-direction: column; gap: 5px; flex: 0 0 auto; min-height: 0; overflow: hidden; }
 .tcrow { display: flex; align-items: center; gap: 8px; background: #20242b; border: 1px solid #2a2e37; border-radius: 6px; padding: 6px 10px; flex: 1 1 0; min-height: 56px; max-height: 90px; }
 /* Keep the list packed at the top so a sparse last page doesn't stretch its
    one capped row into the middle of the column. */

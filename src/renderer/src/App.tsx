@@ -80,7 +80,7 @@ function TriggersCompleters({ e }: { e: ReturnType<typeof useEmulator> }): JSX.E
     items: AdItem[];
   } | null>(null);
   const [busy, setBusy] = useState<string | null>(null); // "<id>:triggers" | "<id>:completers"
-  const perPage = 4;
+  const perPage = 3;
   const ads = e.adManifest;
   const pageCount = Math.max(1, Math.ceil(ads.length / perPage));
   const safePage = Math.min(page, pageCount - 1);
@@ -239,6 +239,35 @@ function TriggersCompleters({ e }: { e: ReturnType<typeof useEmulator> }): JSX.E
   );
 }
 
+function LoyaltyInput({ e }: { e: ReturnType<typeof useEmulator> }): JSX.Element {
+  const [card, setCard] = useState('8018782603900002665855');
+
+  const submit = (): void => {
+    const trimmed = card.trim();
+    if (!trimmed) return;
+    e.loyalty(trimmed);
+  };
+
+  return (
+    <div className="loyalty">
+      <h3>Loyalty / EasyPay</h3>
+      <small className="hint">Scan or type loyalty card #</small>
+      <div className="loyaltyrow">
+        <input
+          type="text"
+          className="loyaltyinput"
+          value={card}
+          onChange={(ev) => setCard(ev.target.value)}
+          onKeyDown={(ev) => { if (ev.key === 'Enter') submit(); }}
+        />
+        <button className="loyaltybtn" onClick={submit} disabled={!card.trim()}>
+          Scan
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function App(): JSX.Element {
   const e = useEmulator();
   const { snapshot } = e;
@@ -325,6 +354,8 @@ function App(): JSX.Element {
             </button>
           </div>
           <QuickKeys e={e} locale={locale} />
+
+          <LoyaltyInput e={e} />
 
           <h3>Triggers &amp; Completers</h3>
           <TriggersCompleters e={e} />
